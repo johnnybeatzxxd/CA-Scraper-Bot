@@ -3,6 +3,14 @@ import asyncio
 import json
 import traceback
 CLIENT_CACHE = {}
+async def test_account(client,username):
+    try:
+        await client.get_user_tweets(username,"Replies")
+        print(f"Logged in successfully for {username}.")
+        return True
+    except Exception as e:
+        print(f"bad news account suspended: {e}")
+        return False
 
 async def get_or_create_client(account, file_path='cookies.json'):
     """Get or create a logged-in client for the given account."""
