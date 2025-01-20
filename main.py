@@ -2,9 +2,9 @@ import asyncio
 from dotenv import load_dotenv
 import os
 from twikit import Client, Tweet
-from get_client import get_or_create_client
-from get_cookies import save_cookies_locally
-from send_message import send_message_to_bot
+from get_client import get_or_create_client  # Assuming you have this in the same directory
+from get_cookies import save_cookies_locally   # Assuming you have this in the same directory
+from send_message import send_message_to_bot # Assuming you have this in the same directory
 import json
 import logging
 import random
@@ -12,16 +12,16 @@ import random
 load_dotenv()
 
 TARGET = "elonmusk"  # Target account to monitor
-CHECK_INTERVAL = 5   # Interval between checks in seconds
+CHECK_INTERVAL = 1   # Interval between checks in seconds
 MAX_RETRIES = 1      # Maximum retries for errors
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,  # Set the default level
-    format='%(asctime)s - %(levelname)s - %(message)s',  # Simplified format
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(),  # Output to console
-        logging.FileHandler("script.log", mode='a')  
+        logging.StreamHandler(),
+        logging.FileHandler("script.log", mode='a')
     ]
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -36,7 +36,7 @@ class MaxRetriesExceededError(Exception):
 
 async def get_latest_tweet(user, client) -> list:
     try:
-        return await client.get_user_tweets(user.id, "Replies")
+        return await client.get_user_tweets(user.id, "Tweets")
     except Exception as e:
         logging.error(f"Error while fetching latest tweets for user {user.name}: {e}")
         raise MaxRetriesExceededError(f"Max retries exceeded for client {client}")
@@ -56,7 +56,17 @@ async def initialize_clients():
     logging.info(f"{len(clients)} clients initialized.")
     return clients
 
+# --- Control flag and stop function ---
+running = False
+
+def stop_main():
+    global running
+    running = False
+# ---
+
 async def main():
+    global running
+    running = True
     clients = await initialize_clients()
     num_clients = len(clients)
 
@@ -73,15 +83,15 @@ async def main():
         return
 
     before_tweet = None
-    while True:
-        if not before_tweet:  # Initialize `before_tweet` if it hasn't been set
+    while running:  # Use the running flag here
+        if not before_tweet:
             try:
                 logging.info(f"Fetching initial tweets using client index {index}.")
                 before_tweet = await get_latest_tweet(user, clients[index])
             except MaxRetriesExceededError:
                 logging.warning(f"Client at index {index} failed to fetch initial tweets.")
-                index = (index + 1) % num_clients  # Rotate to the next client
-                continue  # Retry with the next client
+                index = (index + 1) % num_clients
+                continue
             except Exception as e:
                 logging.error(f"Unexpected error while fetching initial tweets: {e}")
                 index = (index + 1) % num_clients
@@ -92,7 +102,6 @@ async def main():
         print(f"Sleeping for {CHECK_INTERVAL + random_seconds} seconds")
         await asyncio.sleep(CHECK_INTERVAL + random_seconds)
 
-        # Rotate to the next client
         index = (index + 1) % num_clients
 
         logging.info(f"Fetching latest tweets using client index: {index}")
@@ -100,13 +109,13 @@ async def main():
             latest_tweet = await get_latest_tweet(user, clients[index])
         except MaxRetriesExceededError:
             logging.warning(f"Client at index {index} failed to fetch latest tweets.")
-            continue  # Skip to the next client
+            continue
         except Exception as e:
             logging.error(f"Unexpected error while fetching latest tweets: {e}")
             continue
 
         difference = [item for item in latest_tweet if item not in before_tweet]
-
+        print(latest_tweet[1].text)
         if difference:
             for item in difference:
                 index = (index + 1) % num_clients
@@ -119,4 +128,7 @@ async def main():
                     continue
 
         before_tweet = latest_tweet
-asyncio.run(main())
+
+    print("Main loop stopped.") # Indicate that the loop has exited
+
+# No need for asyncio.run() here anymore, it will be handled in app.py

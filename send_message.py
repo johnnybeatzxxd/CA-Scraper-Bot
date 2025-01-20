@@ -10,10 +10,10 @@ PHONE_NUMBER = os.getenv("PHONE_NUMBER")
 
 client = TelegramClient("user_session", API_ID, API_HASH)
 
-async def send_message_to_bot(bot_username: str = "johnnybeatz", your_message: str = "Hello, Bot!") -> None:
+async def send_message_to_bot(bot_username: str = "johnnybeatz", your_message: str = "Hello ") -> None:
+    print("Sending message to bot...")
     await client.start(phone=PHONE_NUMBER)
 
-    bot_username = "BotFather"
 
     await client.send_message(bot_username, your_message)
     print("Message sent!")
