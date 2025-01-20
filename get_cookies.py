@@ -1,22 +1,16 @@
 from twikit import Client
 import asyncio
 import json
+import traceback
 
-ACCOUNT = {
-    "username": "",
-    "phone": "",
-    "password": "",
-    "totp": "",
-}
-
-async def save_cookies_locally(account = ACCOUNT, file_path='cookies.json'):
+async def save_cookies_locally(account, file_path='cookies.json'):
     try:
         client = Client('en-US')
         await client.login(
             auth_info_1=account["username"],
-            auth_info_2=account["phone"],
+            auth_info_2=account["email"],
             password=account["password"]
-            # totp_secret=account["totp"]  # Uncomment if needed
+            # totp_secret=account["totp"]  
         )
         print("Logged in successfully.")
 
@@ -29,8 +23,3 @@ async def save_cookies_locally(account = ACCOUNT, file_path='cookies.json'):
         print(f"Error logging in and saving cookies: {e}")
         traceback.print_exc()
 
-async def main():
-    test = await save_cookies_locally()
-    print(test)
-
-asyncio.run(main())
