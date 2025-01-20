@@ -6,104 +6,117 @@ from get_client import get_or_create_client
 from get_cookies import save_cookies_locally
 from send_message import send_message_to_bot
 import json
+import logging
+import random
 
 load_dotenv()
 
-TARGET = "elonmusk" 
+TARGET = "elonmusk"  # Target account to monitor
+CHECK_INTERVAL = 5   # Interval between checks in seconds
+MAX_RETRIES = 1      # Maximum retries for errors
 
-CHECK_INTERVAL = 5  
-
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,  # Set the default level
+    format='%(asctime)s - %(levelname)s - %(message)s',  # Simplified format
+    handlers=[
+        logging.StreamHandler(),  # Output to console
+        logging.FileHandler("script.log", mode='a')  
+    ]
+)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 async def callback(tweet: Tweet) -> None:
-    print(tweet.reply_to, tweet.in_reply_to)
-    print(f'New tweet posted : {tweet.text}')
+    logging.info(f"New tweet posted: {tweet.text}")
     await send_message_to_bot(your_message=tweet.text)
 
+class MaxRetriesExceededError(Exception):
+    """Custom exception for handling max retries exceeded."""
+    pass
 
-async def get_latest_tweet(user,client) -> Tweet:
+async def get_latest_tweet(user, client) -> list:
     try:
         return await client.get_user_tweets(user.id, "Replies")
-    except:
-        return await client.get_user_tweets(user.id, "Replies")
-
-
-def remove_cookie_alternative(filepath, name_to_remove):
-
-    try:
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        print(f"Error: File '{filepath}' not found.")
-        return
-
-    new_data = {
-        key: value
-        for key, value in data.items()
-        if key != name_to_remove
-    }
-
-    if len(new_data) == len(data):
-        print(f"Error: No cookie entry found for '{name_to_remove}'.")
-        return
-    
-    with open(filepath, 'w') as f:
-        json.dump(new_data, f, indent=2)
-    print(f"Cookie entry for '{name_to_remove}' removed and file saved.")
+    except Exception as e:
+        logging.error(f"Error while fetching latest tweets for user {user.name}: {e}")
+        raise MaxRetriesExceededError(f"Max retries exceeded for client {client}")
 
 async def initialize_clients():
-
     clients = []
-    with open("credintials.json","r") as f:
-        credintials = json.load(f)
+    with open("credintials.json", "r") as f:
+        credentials = json.load(f)
 
-    for account in credintials["accounts"]:
+    for account in credentials["accounts"]:
         try:
             client = await get_or_create_client(account)
+            if client:
+                clients.append(client)
         except Exception as e:
-            print(f"Error initializing client for {account['username']}: {e}")
-            continue
-        if client:
-            clients.append(client)
-    print(len(clients),"clients initialized.")
+            logging.error(f"Failed to initialize client for {account['username']}: {e}")
+    logging.info(f"{len(clients)} clients initialized.")
     return clients
 
 async def main():
-
     clients = await initialize_clients()
     num_clients = len(clients)
 
+    if num_clients == 0:
+        logging.error("No clients initialized. Exiting...")
+        return
+
     index = 0
-    print("user obj request sent with index: ", index)
-    user = await clients[index].get_user_by_screen_name(TARGET)
-    await asyncio.sleep(CHECK_INTERVAL)
-    print("request sent with index: ", index)
-    before_tweet = await get_latest_tweet(user,clients[index])
+    logging.info(f"Requesting user info for target: {TARGET}")
+    try:
+        user = await clients[index].get_user_by_screen_name(TARGET)
+    except Exception as e:
+        logging.error(f"Failed to fetch user info for target {TARGET}: {e}")
+        return
 
+    before_tweet = None
     while True:
+        if not before_tweet:  # Initialize `before_tweet` if it hasn't been set
+            try:
+                logging.info(f"Fetching initial tweets using client index {index}.")
+                before_tweet = await get_latest_tweet(user, clients[index])
+            except MaxRetriesExceededError:
+                logging.warning(f"Client at index {index} failed to fetch initial tweets.")
+                index = (index + 1) % num_clients  # Rotate to the next client
+                continue  # Retry with the next client
+            except Exception as e:
+                logging.error(f"Unexpected error while fetching initial tweets: {e}")
+                index = (index + 1) % num_clients
+                continue
 
-        print("waiting for the next check...")
-        await asyncio.sleep(CHECK_INTERVAL)
-        if index == num_clients - 1:
-            index = 0
-        else:
-            index = index + 1 
+        logging.info("Waiting for the next check...")
+        random_seconds = random.randint(0, 10)/10
+        print(f"Sleeping for {CHECK_INTERVAL + random_seconds} seconds")
+        await asyncio.sleep(CHECK_INTERVAL + random_seconds)
 
-        print("request sent with index: ", index)
-        latest_tweet = await get_latest_tweet(user,clients[index])
-        print(latest_tweet)
+        # Rotate to the next client
+        index = (index + 1) % num_clients
+
+        logging.info(f"Fetching latest tweets using client index: {index}")
+        try:
+            latest_tweet = await get_latest_tweet(user, clients[index])
+        except MaxRetriesExceededError:
+            logging.warning(f"Client at index {index} failed to fetch latest tweets.")
+            continue  # Skip to the next client
+        except Exception as e:
+            logging.error(f"Unexpected error while fetching latest tweets: {e}")
+            continue
 
         difference = [item for item in latest_tweet if item not in before_tweet]
 
         if difference:
             for item in difference:
-                if index == num_clients - 1:
-                    index = 0
-                else:
-                    index = index + 1 
-                print("request sent with index: ", index)
-                tweet = await clients[index].get_tweet_by_id(item.id)
-                await callback(tweet)
+                index = (index + 1) % num_clients
+                logging.info(f"Fetching full tweet details using client index: {index}")
+                try:
+                    tweet = await clients[index].get_tweet_by_id(item.id)
+                    await callback(tweet)
+                except Exception as e:
+                    logging.error(f"Error fetching tweet details: {e}")
+                    continue
 
         before_tweet = latest_tweet
-
 asyncio.run(main())
