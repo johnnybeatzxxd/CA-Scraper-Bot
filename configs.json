@@ -1,5 +1,7 @@
 {
-  "target":"",
-  "interval":1,
-  "max_retries":3
+    "target": "elonmusk",
+    "interval": 1,
+    "max_retries": 3,
+    "platform": "twitter",
+    "bot": "johnnybeatz"
 }

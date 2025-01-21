@@ -61,3 +61,11 @@ def stop_script():
         return "Script is not running!"
 
 
+def change_config(key, value):
+    with open("configs.json","r",encoding='utf-8') as f:
+        configs = json.load(f)
+
+    configs[key] = value
+    with open("configs.json","w",encoding='utf-8') as f:
+        json.dump(configs,f,indent=4)
+    return "Config updated!"

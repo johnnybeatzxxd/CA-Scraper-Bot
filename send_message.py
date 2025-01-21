@@ -5,6 +5,7 @@ import asyncio
 import threading
 from telethon.sessions import StringSession
 import time
+import json
 
 load_dotenv()
 
@@ -102,13 +103,15 @@ def get_telegram_connection():
     return _telegram_connection
 
 def send_message_to_bot(bot_username: str = "johnnybeatz", your_message: str = "Hello ") -> None:
+    with open("configs.json","r",encoding='utf-8') as f:
+        configs = json.load(f)
+    bot_username = configs["bot"]
     try:
         connection = get_telegram_connection()
         connection.send_message(bot_username, your_message)
     except Exception as e:
         print(f"Error sending message: {e}")
 
-# Test the connection if running directly
 if __name__ == "__main__":
     try:
         print("Initializing Telegram connection...")

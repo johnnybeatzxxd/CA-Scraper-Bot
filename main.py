@@ -28,8 +28,8 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 async def callback(tweet: Tweet) -> None:
     logging.info(f"New tweet posted: {tweet.text}")
-    send_message_to_bot(your_message=tweet.text)
-    await bot.send_message(533017326, f"New tweet posted: {tweet.text}")
+    await send_message_to_bot(your_message=tweet.text)
+    await bot.send_message(533017326,f"New tweet posted: {tweet.text}")
 
 class MaxRetriesExceededError(Exception):
     """Custom exception for handling max retries exceeded."""
@@ -70,6 +70,7 @@ def stop_main():
 async def main(TARGET, CHECK_INTERVAL):
     global running
     running = True
+    bot.send_message(533017326,f"Initalizing clients...")
     clients = await initialize_clients()
     num_clients = len(clients)
 
@@ -84,11 +85,12 @@ async def main(TARGET, CHECK_INTERVAL):
         user = await clients[index].get_user_by_screen_name(TARGET)
     except Exception as e:
         logging.error(f"Failed to fetch user info for target {TARGET}: {e}")
-        bot.send_message(533017326,f"Error while fetching latest tweets for user {user.name}: {e}")
+        bot.send_message(533017326,f"Error while fetching latest tweets for user {TARGET}: {e}")
         bot.send_message(533017326,f"script stopped")
         return
 
     before_tweet = None
+    bot.send_message(533017326,f"Searching for CA...")
     while running:  # Use the running flag here
         if not before_tweet:
             try:
