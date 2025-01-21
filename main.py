@@ -28,8 +28,8 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 async def callback(tweet: Tweet) -> None:
     logging.info(f"New tweet posted: {tweet.text}")
-    await send_message_to_bot(your_message=tweet.text)
-    await bot.send_message(533017326,f"New tweet posted: {tweet.text}")
+    send_message_to_bot(your_message=tweet.text)
+    await bot.send_message(533017326, f"New tweet posted: {tweet.text}")
 
 class MaxRetriesExceededError(Exception):
     """Custom exception for handling max retries exceeded."""

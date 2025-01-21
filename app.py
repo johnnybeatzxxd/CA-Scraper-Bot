@@ -39,11 +39,10 @@ def telegram_bot():
 
 @bot.message_handler(func=lambda message: True)
 def chat(message):
-
     if message.text == "⚡ Start hunting":
-        asyncio.run(send_message_to_bot(your_message="starting the script"))
+        send_message_to_bot(your_message="starting the script")
         response = start_script()
-        bot.reply_to(message, f"{response}",reply_markup=markups())
+        bot.reply_to(message, f"{response}", reply_markup=markups())
 
     elif message.text == "🛑 Stop hunting":
         response = stop_script()
@@ -53,4 +52,4 @@ def chat(message):
         bot.reply_to(message, "I don't understand you 😢",reply_markup=markups())
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)

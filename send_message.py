@@ -1,25 +1,126 @@
 from telethon import TelegramClient
 import os
 from dotenv import load_dotenv
+import asyncio
+import threading
+from telethon.sessions import StringSession
+import time
 
 load_dotenv()
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-PHONE_NUMBER = os.getenv("PHONE_NUMBER")  
+PHONE_NUMBER = os.getenv("PHONE_NUMBER")
 
-client = TelegramClient("user_session", API_ID, API_HASH)
+class TelegramConnection:
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+            return cls._instance
 
-async def send_message_to_bot(bot_username: str = "johnnybeatz", your_message: str = "Hello ") -> None:
-    print("Sending message to bot...")
-    await client.start(phone=PHONE_NUMBER)
+    def __init__(self):
+        if not hasattr(self, 'initialized'):
+            self.client = None
+            self.loop = None
+            self.thread = None
+            self.initialized = False
+            self._setup_client()
 
-    await client.send_message(bot_username, your_message)
-    print("Message sent!")
+    def code_callback(self):
+        print("Please check your Telegram app for the code!")
+        return input('Enter the code you received: ')
 
-    await client.disconnect()
+    def password_callback(self):
+        return input('Please enter your 2FA password: ')
 
+    async def _start_client(self):
+        try:
+            await self.client.start(phone=PHONE_NUMBER, code_callback=self.code_callback, password=self.password_callback)
+            print("Client started successfully!")
+            self.initialized = True
+        except Exception as e:
+            print(f"Error starting client: {e}")
+            self.initialized = False
+
+    def _run_client(self):
+        try:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            
+            self.client = TelegramClient(
+                "user_session",
+                API_ID,
+                API_HASH,
+                sequential_updates=True
+            )
+
+            print("Starting Telegram client...")
+            self.loop.run_until_complete(self._start_client())
+            self.loop.run_forever()
+        except Exception as e:
+            print(f"Error in client thread: {e}")
+            self.initialized = False
+
+    def _setup_client(self):
+        if not self.initialized:
+            self.thread = threading.Thread(target=self._run_client, daemon=True)
+            self.thread.start()
+            
+            timeout = 60  # 60 seconds timeout
+            start_time = time.time()
+            while not self.initialized and time.time() - start_time < timeout:
+                time.sleep(0.1)
+            
+            if not self.initialized:
+                raise RuntimeError("Failed to initialize Telegram client")
+
+    def send_message(self, username, message):
+        if not self.client:
+            raise RuntimeError("Client not initialized")
+        
+        async def _send():
+            try:
+                await self.client.send_message(username, message)
+                print("Message sent successfully!")
+            except Exception as e:
+                print(f"Error sending message: {e}")
+
+        future = asyncio.run_coroutine_threadsafe(_send(), self.loop)
+        return future.result(timeout=10)
+
+# Global instance
+_telegram_connection = None
+
+def get_telegram_connection():
+    global _telegram_connection
+    if _telegram_connection is None:
+        _telegram_connection = TelegramConnection()
+    return _telegram_connection
+
+def send_message_to_bot(bot_username: str = "johnnybeatz", your_message: str = "Hello ") -> None:
+    try:
+        connection = get_telegram_connection()
+        connection.send_message(bot_username, your_message)
+    except Exception as e:
+        print(f"Error sending message: {e}")
+
+# Test the connection if running directly
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(send_message_to_bot())
+    try:
+        print("Initializing Telegram connection...")
+        connection = get_telegram_connection()
+        print("Connection established!")
+        
+        # Use your actual bot username here
+        send_message_to_bot(
+            bot_username="johnnybeatz",  # Replace with your actual bot username
+            your_message="Test message from initialization"
+        )
+        print("Test complete!")
+    except Exception as e:
+        print(f"Error during initialization: {e}")
 
