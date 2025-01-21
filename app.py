@@ -1,51 +1,56 @@
-# app.py
-from flask import Flask
-import threading
+from flask import Flask, request, jsonify
+import json
+import telebot
+import os
 import asyncio
-from main import main, stop_main  
+from dotenv import load_dotenv
+from utils import start_script, stop_script
+from send_message import send_message_to_bot
+
+load_dotenv()
 
 app = Flask(__name__)
-main_loop = None
-main_thread = None
+
+# Telegram Bot Setup
+bot = telebot.TeleBot(os.environ.get("TelegramBotToken"))
+
+def markups():
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True,row_width=2)   
+    start = telebot.types.KeyboardButton('⚡ Start hunting')   
+    stop = telebot.types.KeyboardButton('🛑 Stop hunting')   
+    add_workers = telebot.types.KeyboardButton('👥 Add workers')
+    config = telebot.types.KeyboardButton('⚙️ Config')
+    markup.add(start,stop,add_workers,config)
+    return markup
 
 @app.route('/')
 def hello():
-    return "Hello, World!"
+    return f"Hello, World!"
 
-@app.route('/start')
-def start_script():
-    global main_thread
-    global main_loop
+@app.route('/bot', methods=['POST'])
+def telegram_bot():
+    try:
+        update = telebot.types.Update.de_json(request.get_json(force=True))
+        bot.process_new_updates([update])
+        return "!", 200
+    except Exception as e:
+        print(f"Error processing Telegram update: {e}")
+        return "Error", 500
 
-    if main_thread is None or not main_thread.is_alive():
-      # Create a new event loop for the thread
-      main_loop = asyncio.new_event_loop()
-      asyncio.set_event_loop(main_loop)
+@bot.message_handler(func=lambda message: True)
+def chat(message):
 
-      # Start the main function in a separate thread
-      main_thread = threading.Thread(target=lambda: main_loop.run_until_complete(main()))
-      main_thread.start()
-      return "<p>Script started!</p>"
+    if message.text == "⚡ Start hunting":
+        asyncio.run(send_message_to_bot(your_message="starting the script"))
+        response = start_script()
+        bot.reply_to(message, f"{response}",reply_markup=markups())
+
+    elif message.text == "🛑 Stop hunting":
+        response = stop_script()
+        bot.reply_to(message, f"{response}",reply_markup=markups())
+
     else:
-      return "<p>Script is already running!</p>"
-
-@app.route('/stop')
-def stop_script():
-    global main_thread
-    global main_loop
-
-    if main_thread is not None and main_thread.is_alive():
-        # Stop the main function
-        stop_main()
-
-        # Stop the event loop and wait for the thread to finish
-        main_loop.call_soon_threadsafe(main_loop.stop)
-        main_thread.join()
-
-        return "<p>Script stopped!</p>"
-    else:
-        return "<p>Script is not running!</p>"
+        bot.reply_to(message, "I don't understand you 😢",reply_markup=markups())
 
 if __name__ == "__main__":
     app.run(debug=True)
-
