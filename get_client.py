@@ -1,7 +1,14 @@
 from twikit import Client
 import asyncio
+from dotenv import load_dotenv
+import os
 import json
 import logging
+import telebot 
+
+
+load_dotenv()
+bot = telebot.TeleBot(os.environ.get("TelegramBotToken"))
 
 logging.basicConfig(
     level=logging.INFO,  

@@ -14,7 +14,6 @@ async def send_message_to_bot(bot_username: str = "johnnybeatz", your_message: s
     print("Sending message to bot...")
     await client.start(phone=PHONE_NUMBER)
 
-
     await client.send_message(bot_username, your_message)
     print("Message sent!")
 
