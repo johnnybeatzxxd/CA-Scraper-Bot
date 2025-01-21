@@ -115,7 +115,10 @@ async def main():
             continue
 
         difference = [item for item in latest_tweet if item not in before_tweet]
-        print(latest_tweet[1].text)
+
+        # for item in latest_tweet:
+            # print(item.text)
+
         if difference:
             for item in difference:
                 index = (index + 1) % num_clients

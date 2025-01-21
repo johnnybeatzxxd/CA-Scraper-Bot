@@ -8,10 +8,11 @@ app = Flask(__name__)
 main_loop = None
 main_thread = None
 
-app.route('/')
+@app.route('/')
 def hello():
     return "Hello, World!"
 
+@app.route('/start')
 def start_script():
     global main_thread
     global main_loop
@@ -28,7 +29,7 @@ def start_script():
     else:
       return "<p>Script is already running!</p>"
 
-
+@app.route('/stop')
 def stop_script():
     global main_thread
     global main_loop
