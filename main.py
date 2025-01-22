@@ -39,11 +39,9 @@ async def callback(tweet: Tweet) -> None:
     result = get_contract_address(tweet.text)
 
     if result != [] and result is not None:
-        await send_message_to_bot(your_message=result[0])
-        bot.send_message(533017326,f"New tweet posted: {tweet.text}")
-        bot.send_message(533017326,f"CA Found: {result[0]}")
-    bot.send_message(533017326,f"New tweet posted: {tweet.text}")
-    bot.send_message(533017326,f"No CA Found!")
+        await send_message_to_bot(your_message=result[0])        
+    await bot.send_message(533017326,f"New tweet posted: {tweet.text}")
+    await bot.send_message(533017326,f"No CA Found!")
 
 class MaxRetriesExceededError(Exception):
     """Custom exception for handling max retries exceeded."""
@@ -164,7 +162,6 @@ async def main(TARGET, CHECK_INTERVAL):
             try:
                 logging.info(f"Fetching initial tweets using client index {index}.")
                 before_tweet = await get_latest_tweet(user, clients[index])
-                bot.send_message(533017326,f"{before_tweet[0].media}")
                
             except MaxRetriesExceededError:
                 logging.warning(f"Client at index {index} failed to fetch initial tweets.")

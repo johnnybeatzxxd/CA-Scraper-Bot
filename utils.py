@@ -18,58 +18,110 @@ config_collection = db['configs']
 
 main_loop = None
 main_thread = None
+main_task = None  # Add this to track the running task
+
+# Add logging configuration at the top after imports
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 def start_script():
-
     global main_thread
     global main_loop
+    global main_task
+
+    logging.info("Attempting to start script...")
 
     if main_thread is None or not main_thread.is_alive():
-        # Create a new event loop for the thread
+        logging.info("Creating new event loop and thread...")
         main_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(main_loop)
-
+        
         # get configs from MongoDB
         configs = config_collection.find_one() or {}
+        logging.info("Retrieved configurations from MongoDB")
 
         target = configs.get("target")
         if target is None or target == "":
+            logging.error("Target is not set")
             return "Target is not set"
 
         interval = configs.get("interval")
         if interval is None or interval == "":
+            logging.error("Interval is not set")
             return "Interval is not set"
-        print(f"target: {target} interval: {interval}")
+        
+        logging.info(f"Starting script with target: {target} and interval: {interval}")
 
-        # Start the main function in a separate thread
-        from main import main 
-        main_thread = threading.Thread(target=lambda: main_loop.run_until_complete(main(target,interval)))
+        def run_main():
+            global main_task
+            logging.info("Setting up event loop in new thread")
+            asyncio.set_event_loop(main_loop)
+            from main import main
+            main_task = main_loop.create_task(main(target, interval))
+            try:
+                logging.info("Starting main task execution")
+                main_loop.run_until_complete(main_task)
+            except asyncio.CancelledError:
+                logging.info("Main task was cancelled")
+            except Exception as e:
+                logging.error(f"Unexpected error in main task: {str(e)}")
+            finally:
+                logging.info("Closing event loop")
+                main_loop.close()
+
+        main_thread = threading.Thread(target=run_main)
         main_thread.start()
+        logging.info("Script started successfully")
         return "Script started!"
     else:
-      return "Script is already running!"
+        logging.warning("Attempted to start script while it's already running")
+        return "Script is already running!"
 
 def stop_script():
     global main_thread
     global main_loop
+    global main_task
+
+    logging.info("Attempting to stop script...")
 
     if main_thread is not None and main_thread.is_alive():
-        from main import stop_main  
-        stop_main()
+        logging.info("Script is running, initiating shutdown sequence")
+        from main import stop_main
+        stop_main()  # Set the running flag to False
+        logging.info("Stop flag set")
 
-        main_loop.call_soon_threadsafe(main_loop.stop)
-        main_thread.join()
+        if main_task:
+            logging.info("Cancelling main task")
+            main_loop.call_soon_threadsafe(main_task.cancel)
+        
+        logging.info("Waiting for thread to complete (timeout: 5 seconds)")
+        main_thread.join(timeout=5)
+        
+        if main_thread.is_alive():
+            logging.warning("Thread did not complete within timeout period")
+        else:
+            logging.info("Thread completed successfully")
 
+        # Clean up globals
+        logging.info("Cleaning up global variables")
+        main_thread = None
+        main_loop = None
+        main_task = None
+
+        logging.info("Script stopped successfully")
         return "Script stopped!"
     else:
+        logging.warning("Attempted to stop script while it's not running")
         return "Script is not running!"
 
-
 def change_config(key, value):
-    # Update the config in MongoDB. If it doesn't exist, it will be created
+    logging.info(f"Updating configuration - Key: {key}, Value: {value}")
     config_collection.update_one(
-        {},  # Empty filter to match the single config document
+        {}, 
         {'$set': {key: value}},
         upsert=True
     )
+    logging.info("Configuration updated successfully")
     return "Config updated!"
