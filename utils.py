@@ -8,8 +8,13 @@ from send_message import send_message_to_bot
 import json
 import logging
 import random
+from pymongo import MongoClient
 
 load_dotenv()
+MONGO_URL = os.getenv('MONGO_URL')
+client = MongoClient(MONGO_URL)
+db = client['CA-Hunter'] 
+config_collection = db['configs']  
 
 main_loop = None
 main_thread = None
@@ -24,16 +29,15 @@ def start_script():
         main_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(main_loop)
 
-        # get configs
-        with open("configs.json","r",encoding='utf-8') as f:
-            configs = json.load(f)
+        # get configs from MongoDB
+        configs = config_collection.find_one() or {}
 
         target = configs.get("target")
         if target is None or target == "":
             return "Target is not set"
 
-        interval  = configs.get("interval")
-        if interval is None or interval == "": 
+        interval = configs.get("interval")
+        if interval is None or interval == "":
             return "Interval is not set"
         print(f"target: {target} interval: {interval}")
 
@@ -62,10 +66,10 @@ def stop_script():
 
 
 def change_config(key, value):
-    with open("configs.json","r",encoding='utf-8') as f:
-        configs = json.load(f)
-
-    configs[key] = value
-    with open("configs.json","w",encoding='utf-8') as f:
-        json.dump(configs,f,indent=4)
+    # Update the config in MongoDB. If it doesn't exist, it will be created
+    config_collection.update_one(
+        {},  # Empty filter to match the single config document
+        {'$set': {key: value}},
+        upsert=True
+    )
     return "Config updated!"

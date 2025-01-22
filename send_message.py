@@ -5,9 +5,15 @@ import asyncio
 import threading
 from telethon.sessions import StringSession
 import time
-import json
+from pymongo import MongoClient
 
 load_dotenv()
+
+# MongoDB Setup
+MONGO_URL = os.getenv('MONGO_URL')
+mongo_client = MongoClient(MONGO_URL)
+db = mongo_client['CA-Hunter']
+config_collection = db['configs']
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
@@ -103,10 +109,11 @@ def get_telegram_connection():
     return _telegram_connection
 
 def send_message_to_bot(bot_username: str = "johnnybeatz", your_message: str = "Hello ") -> None:
-    with open("configs.json","r",encoding='utf-8') as f:
-        configs = json.load(f)
-    bot_username = configs["bot"]
     try:
+        # Get bot username from MongoDB
+        config = config_collection.find_one() or {}
+        bot_username = config.get("bot", bot_username)  # Use default if not found
+        
         connection = get_telegram_connection()
         connection.send_message(bot_username, your_message)
     except Exception as e:
@@ -118,9 +125,12 @@ if __name__ == "__main__":
         connection = get_telegram_connection()
         print("Connection established!")
         
-        # Use your actual bot username here
+        # Get bot username from MongoDB for testing
+        config = config_collection.find_one() or {}
+        bot_username = config.get("bot", "johnnybeatz")  # Use default if not found
+        
         send_message_to_bot(
-            bot_username="johnnybeatz",  # Replace with your actual bot username
+            bot_username=bot_username,
             your_message="Test message from initialization"
         )
         print("Test complete!")

@@ -4,12 +4,19 @@ import os
 from twikit import Client, Tweet
 from get_client import get_or_create_client  
 from send_message import send_message_to_bot
-import json
 import logging
 import random
 import telebot
+from pymongo import MongoClient
 
 load_dotenv()
+
+# MongoDB Setup
+MONGO_URL = os.getenv('MONGO_URL')
+mongo_client = MongoClient(MONGO_URL)
+db = mongo_client['CA-Hunter']  # Replace with your database name
+credentials_collection = db['credentials']
+config_collection = db['configs']
 
 bot = telebot.TeleBot(os.environ.get("TelegramBotToken"))
 # TARGET = "elonmusk"  # Target account to monitor
@@ -29,7 +36,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 async def callback(tweet: Tweet) -> None:
     logging.info(f"New tweet posted: {tweet.text}")
     await send_message_to_bot(your_message=tweet.text)
-    await bot.send_message(533017326,f"New tweet posted: {tweet.text}")
+    bot.send_message(533017326,f"New tweet posted: {tweet.text}")
 
 class MaxRetriesExceededError(Exception):
     """Custom exception for handling max retries exceeded."""
@@ -45,16 +52,25 @@ async def get_latest_tweet(user, client) -> list:
 
 async def initialize_clients():
     clients = []
-    with open("credintials.json", "r") as f:
-        credentials = json.load(f)
-
-    for account in credentials["accounts"]:
-        try:
-            client = await get_or_create_client(account)
-            if client:
-                clients.append(client)
-        except Exception as e:
-            logging.error(f"Failed to initialize client for {account['username']}: {e}")
+    # Get credentials from MongoDB instead of JSON file
+    credentials_docs = credentials_collection.find({})
+    
+    for doc in credentials_docs:
+        # Access the accounts array in the document
+        accounts = doc.get('accounts', [])
+        for account in accounts:
+            try:
+                # Extract username, email, and password from the nested account object
+                client = await get_or_create_client({
+                    'username': account.get('username'),
+                    'email': account.get('email'),
+                    'password': account.get('password')
+                })
+                if client:
+                    clients.append(client)
+            except Exception as e:
+                logging.error(f"Failed to initialize client for {account.get('username', 'unknown')}: {e}")
+    
     logging.info(f"{len(clients)} clients initialized.")
     bot.send_message(533017326,f"{len(clients)} clients initialized.")
     return clients
@@ -70,7 +86,7 @@ def stop_main():
 async def main(TARGET, CHECK_INTERVAL):
     global running
     running = True
-    bot.send_message(533017326,f"Initalizing clients...")
+    bot.send_message(533017326,f"Initializing clients...")
     clients = await initialize_clients()
     num_clients = len(clients)
 
@@ -91,7 +107,12 @@ async def main(TARGET, CHECK_INTERVAL):
 
     before_tweet = None
     bot.send_message(533017326,f"Searching for CA...")
-    while running:  # Use the running flag here
+    
+    # Get configurations from MongoDB
+    config = config_collection.find_one() or {}
+    check_interval = config.get('interval', CHECK_INTERVAL)
+    
+    while running:
         if not before_tweet:
             try:
                 logging.info(f"Fetching initial tweets using client index {index}.")
@@ -107,8 +128,8 @@ async def main(TARGET, CHECK_INTERVAL):
 
         logging.info("Waiting for the next check...")
         random_seconds = random.randint(0, 10)/10
-        print(f"Sleeping for {CHECK_INTERVAL + random_seconds} seconds")
-        await asyncio.sleep(CHECK_INTERVAL + random_seconds)
+        print(f"Sleeping for {check_interval + random_seconds} seconds")
+        await asyncio.sleep(check_interval + random_seconds)
 
         index = (index + 1) % num_clients
 
@@ -123,9 +144,6 @@ async def main(TARGET, CHECK_INTERVAL):
             continue
 
         difference = [item for item in latest_tweet if item not in before_tweet]
-
-        # for item in latest_tweet:
-            # print(item.text)
 
         if difference:
             for item in difference:
@@ -142,4 +160,3 @@ async def main(TARGET, CHECK_INTERVAL):
 
     print("Main loop stopped.") # Indicate that the loop has exited
 
-# No need for asyncio.run() here anymore, it will be handled in app.py

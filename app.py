@@ -4,12 +4,19 @@ import telebot
 import os
 import asyncio
 from dotenv import load_dotenv
+from pymongo import MongoClient
 from utils import start_script, stop_script, change_config
 from send_message import send_message_to_bot
 
 load_dotenv()
 
 app = Flask(__name__)
+
+# MongoDB Setup
+MONGO_URL = os.getenv('MONGO_URL')
+client = MongoClient(MONGO_URL)
+db = client['CA-Hunter']  
+config_collection = db['configs']
 
 # Telegram Bot Setup
 bot = telebot.TeleBot(os.environ.get("TelegramBotToken"))
@@ -56,10 +63,10 @@ def chat(message):
         markup.row(bot_btn)
         markup.row(platform_btn)
 
-        with open("configs.json", "r", encoding='utf-8') as f:
-            configs = json.load(f)
+        configs = get_configs()
         config_message = "\n".join([f"{key}: {value}" for key, value in configs.items() if key not in ['interval', 'max_retries']])
-        bot.reply_to(message, f"Current configurations\n\n{config_message}", )
+        
+        bot.reply_to(message, f"Current configurations\n\n{config_message}")
         bot.reply_to(message, "Choose what you want to configure:", reply_markup=markup)
 
     else:
@@ -69,7 +76,7 @@ def chat(message):
 def callback_query(call):
     if call.data == "set_target":
         msg = bot.send_message(call.message.chat.id, 
-                             "Please enter the  username to target (without @ symbol):", 
+                             "Please enter the username to target (without @ symbol):", 
                              reply_markup=telebot.types.ForceReply())
         bot.register_next_step_handler(msg, process_target_step)
         
@@ -123,6 +130,17 @@ def process_bot_step(message):
         bot.reply_to(message, f"Bot has been set to: {bot_name}", reply_markup=markups())
     except ValueError as e:
         bot.reply_to(message, f"Invalid bot name! Please try again.", reply_markup=markups())
+
+def get_configs():
+    try:
+        configs = config_collection.find_one() or {}
+        # Remove MongoDB's _id field if it exists
+        if '_id' in configs:
+            del configs['_id']
+        return configs
+    except Exception as e:
+        print(f"Error fetching configs from MongoDB: {e}")
+        return {}
 
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=True)
