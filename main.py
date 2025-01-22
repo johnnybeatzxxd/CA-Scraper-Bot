@@ -100,9 +100,9 @@ async def initialize_clients():
     
     # Send summary message through telegram
     summary_message = (
-        f"Client Initialization Summary:\n"
+        f"Client Initialization Summary:\n\n"
         f"✅ Successful ({len(successful_accounts)}): {', '.join(successful_accounts)}\n"
-        f"❌ Failed ({len(failed_accounts)}): {', '.join(failed_accounts)}\n"
+        f"❌ Failed ({len(failed_accounts)}): {', '.join(failed_accounts)}\n\n"
         f"Total clients initialized: {len(clients)}"
     )
     bot.send_message(533017326, summary_message)

@@ -25,9 +25,9 @@ def markups():
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True,row_width=2)   
     start = telebot.types.KeyboardButton('⚡ Start hunting')   
     stop = telebot.types.KeyboardButton('🛑 Stop hunting')   
-    add_workers = telebot.types.KeyboardButton('👥 Add workers')
+    workers = telebot.types.KeyboardButton('👥 Workers')
     config = telebot.types.KeyboardButton('⚙️ Config')
-    markup.add(start,stop,add_workers,config)
+    markup.add(start,stop,workers,config)
     return markup
 
 @app.route('/')
@@ -53,6 +53,32 @@ def chat(message):
     elif message.text == "🛑 Stop hunting":
         response = stop_script()
         bot.reply_to(message, f"{response}",reply_markup=markups())
+
+    elif message.text == "👥 Workers":
+        credentials_collection = db['credentials']
+        doc = credentials_collection.find_one({})
+        
+        # Get both offline and online accounts
+        offline_accounts = doc.get('offline', []) if doc else []
+        online_accounts = doc.get('accounts', []) if doc else []
+        
+        # Create status message
+        status_message = "Worker Accounts Status:\n\n"
+        status_message += f"✅ Active Workers: {len(online_accounts)}\n"
+        status_message += f"❌ Offline Workers: {len(offline_accounts)}\n"
+        status_message += f"📊 Total Workers: {len(online_accounts) + len(offline_accounts)}"
+        
+        # Create inline keyboard
+        markup = telebot.types.InlineKeyboardMarkup()
+        list_btn = telebot.types.InlineKeyboardButton('📋 List Workers', callback_data='list_workers')
+        add_btn = telebot.types.InlineKeyboardButton('➕ Add Worker', callback_data='add_worker')
+        delete_btn = telebot.types.InlineKeyboardButton('🗑️ Delete Worker', callback_data='delete_worker')
+        markup.row(list_btn)
+        markup.row(add_btn)
+        markup.row(delete_btn)
+        
+        # Send status message with inline keyboard
+        bot.reply_to(message, status_message, reply_markup=markup)
 
     elif message.text == "⚙️ Config":
         markup = telebot.types.InlineKeyboardMarkup()
@@ -105,6 +131,116 @@ def callback_query(call):
                             reply_markup=None)
         bot.send_message(call.message.chat.id, "Configuration updated!", reply_markup=markups())
 
+    elif call.data == "list_workers":
+        credentials_collection = db['credentials']
+        doc = credentials_collection.find_one({})
+        
+        # Get both offline and online accounts
+        offline_accounts = doc.get('offline', []) if doc else []
+        online_accounts = doc.get('accounts', []) if doc else []
+        
+        if not offline_accounts and not online_accounts:
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="No worker accounts found."
+            )
+            return
+        
+        account_list = "Worker Accounts:\n\n"
+        
+        # List online accounts (good status)
+        for i, account in enumerate(online_accounts, 1):
+            account_list += f"{i}. @{account['username']} - ✅ Good\n"
+        
+        # List offline accounts (bad status)
+        for i, account in enumerate(offline_accounts, len(online_accounts) + 1):
+            account_list += f"{i}. @{account['username']} - ❌ Bad\n"
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=account_list
+        )
+
+    elif call.data == "add_worker":
+        msg = bot.send_message(
+            call.message.chat.id,
+            "Please enter worker accounts in the following format:\n\n"
+            "username email password\n"
+            "(one account per line)\n\n"
+            "Example:\n"
+            "worker1 worker1@email.com pass123\n"
+            "worker2 worker2@email.com pass456",
+            reply_markup=telebot.types.ForceReply()
+        )
+        bot.register_next_step_handler(msg, process_workers_step)
+
+    elif call.data == "delete_worker":
+        credentials_collection = db['credentials']
+        doc = credentials_collection.find_one({})
+        
+        # Get both offline and online accounts
+        offline_accounts = doc.get('offline', []) if doc else []
+        online_accounts = doc.get('accounts', []) if doc else []
+        
+        if not offline_accounts and not online_accounts:
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="No worker accounts to delete."
+            )
+            return
+        
+        markup = telebot.types.InlineKeyboardMarkup()
+        
+        # Add buttons for online accounts
+        for account in online_accounts:
+            btn = telebot.types.InlineKeyboardButton(
+                f"@{account['username']} - ✅", 
+                callback_data=f"del_{account['username']}_good"
+            )
+            markup.row(btn)
+        
+        # Add buttons for offline accounts
+        for account in offline_accounts:
+            btn = telebot.types.InlineKeyboardButton(
+                f"@{account['username']} - ❌", 
+                callback_data=f"del_{account['username']}_bad"
+            )
+            markup.row(btn)
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="Select account to delete:",
+            reply_markup=markup
+        )
+        
+    elif call.data.startswith('del_'):
+        # Split the callback data to get username and status
+        _, username, status = call.data.split('_')
+        credentials_collection = db['credentials']
+        
+        # Remove from the appropriate array based on status
+        if status == 'good':
+            credentials_collection.update_one(
+                {},
+                {'$pull': {'accounts': {'username': username}}}
+            )
+        else:  # status == 'bad'
+            credentials_collection.update_one(
+                {},
+                {'$pull': {'offline': {'username': username}}}
+            )
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"Account @{username} has been deleted.",
+        )
+        bot.send_message(call.message.chat.id, "Worker account deleted successfully!", reply_markup=markups())
+
 def process_target_step(message):
     try:
         target = message.text.strip()  
@@ -130,6 +266,55 @@ def process_bot_step(message):
         bot.reply_to(message, f"Bot has been set to: {bot_name}", reply_markup=markups())
     except ValueError as e:
         bot.reply_to(message, f"Invalid bot name! Please try again.", reply_markup=markups())
+
+def process_workers_step(message):
+    try:
+        workers = []
+        lines = message.text.strip().split('\n')
+        
+        for line in lines:
+            parts = line.strip().split()
+            if len(parts) != 3:
+                raise ValueError("Invalid format")
+            
+            username, email, password = parts
+            workers.append({
+                'username': username,
+                'email': email,
+                'password': password
+            })
+        
+        # Save workers to credentials collection in the accounts list
+        credentials_collection = db['credentials']
+        credentials_collection.update_one(
+            {},  # empty filter to match any document
+            {
+                '$push': {
+                    'accounts': {
+                        '$each': workers
+                    }
+                }
+            },
+            upsert=True  # create document if it doesn't exist
+        )
+        
+        bot.reply_to(
+            message,
+            f"Successfully added {len(workers)} worker accounts!",
+            reply_markup=markups()
+        )
+    except ValueError:
+        bot.reply_to(
+            message,
+            "Invalid format! Please make sure each line contains: username email password",
+            reply_markup=markups()
+        )
+    except Exception as e:
+        bot.reply_to(
+            message,
+            f"Error adding workers: {str(e)}",
+            reply_markup=markups()
+        )
 
 def get_configs():
     try:
