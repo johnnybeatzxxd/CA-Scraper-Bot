@@ -131,6 +131,21 @@ async def main(TARGET, CHECK_INTERVAL):
         bot.send_message(533017326,f"script stopped")
         return
 
+    #
+    RATE_LIMIT_REQUESTS = 50 
+    RATE_LIMIT_WINDOW = 15 * 60  
+    
+    # Calculate requests per second we can make with all clients combined
+    total_requests_per_window = RATE_LIMIT_REQUESTS * num_clients
+    # Add 20% safety margin to avoid hitting limits
+    safe_interval = (RATE_LIMIT_WINDOW / total_requests_per_window) * 1.2
+    
+    # Use the calculated interval or the minimum CHECK_INTERVAL, whichever is larger
+    check_interval = max(safe_interval, CHECK_INTERVAL)
+    
+    logging.info(f"Calculated interval: {check_interval:.2f} seconds with {num_clients} clients")
+    #bot.send_message(533017326, f"Running with interval: {check_interval:.2f} seconds using {num_clients} clients")
+
     index = 0
     logging.info(f"Requesting user info for target: {TARGET}")
     try:
@@ -143,10 +158,6 @@ async def main(TARGET, CHECK_INTERVAL):
 
     before_tweet = None
     bot.send_message(533017326,f"Searching for CA...")
-    
-    # Get configurations from MongoDB
-    config = config_collection.find_one() or {}
-    check_interval = config.get('interval', CHECK_INTERVAL)
     
     while running:
         if not before_tweet:
