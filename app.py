@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from utils import start_script, stop_script, change_config
 from send_message import send_message_to_bot
+from setup_accounts import setup_accounts 
 
 load_dotenv()
 
@@ -164,6 +165,19 @@ def callback_query(call):
         )
 
     elif call.data == "add_worker":
+        markup = telebot.types.InlineKeyboardMarkup()
+        text_btn = telebot.types.InlineKeyboardButton('📝 Text Input', callback_data='text_input')
+        file_btn = telebot.types.InlineKeyboardButton('📎 Upload File', callback_data='file_upload')
+        markup.row(text_btn, file_btn)
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="Choose how you want to add workers:",
+            reply_markup=markup
+        )
+
+    elif call.data == "text_input":
         msg = bot.send_message(
             call.message.chat.id,
             "Please enter worker accounts in the following format:\n\n"
@@ -175,6 +189,14 @@ def callback_query(call):
             reply_markup=telebot.types.ForceReply()
         )
         bot.register_next_step_handler(msg, process_workers_step)
+
+    elif call.data == "file_upload":
+        msg = bot.send_message(
+            call.message.chat.id,
+            "Please upload a text file containing worker accounts.\n",
+            reply_markup=telebot.types.ForceReply()
+        )
+        bot.register_next_step_handler(msg, process_file_upload)
 
     elif call.data == "delete_worker":
         credentials_collection = db['credentials']
@@ -313,6 +335,34 @@ def process_workers_step(message):
         bot.reply_to(
             message,
             f"Error adding workers: {str(e)}",
+            reply_markup=markups()
+        )
+
+def process_file_upload(message):
+    try:
+        if not message.document or not message.document.mime_type == 'text/plain':
+            raise ValueError("Please upload a text file (.txt)")
+
+        file_info = bot.get_file(message.document.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+
+        # Save the file locally
+        with open('accounts.txt', 'wb') as new_file:
+            new_file.write(downloaded_file)
+
+        accounts = setup_accounts()
+
+        bot.reply_to(
+            message,
+            f"{len(accounts)} workers added from the file!",
+            reply_markup=markups()
+        )
+    except ValueError as e:
+        bot.reply_to(message, str(e), reply_markup=markups())
+    except Exception as e:
+        bot.reply_to(
+            message,
+            f"Error processing file: {str(e)}",
             reply_markup=markups()
         )
 

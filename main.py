@@ -164,6 +164,8 @@ async def main(TARGET, CHECK_INTERVAL):
             try:
                 logging.info(f"Fetching initial tweets using client index {index}.")
                 before_tweet = await get_latest_tweet(user, clients[index])
+                bot.send_message(533017326,f"{before_tweet[0].media}")
+               
             except MaxRetriesExceededError:
                 logging.warning(f"Client at index {index} failed to fetch initial tweets.")
                 index = (index + 1) % num_clients

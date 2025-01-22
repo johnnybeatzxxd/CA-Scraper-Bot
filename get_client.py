@@ -6,6 +6,7 @@ import json
 import logging
 import telebot 
 from pymongo import MongoClient
+import requests
 
 
 load_dotenv()
@@ -39,6 +40,9 @@ async def test_account(client, username):
 
 async def get_or_create_client(account):
     username = account["username"]
+    email = account.get("email")
+    password = account.get("password")
+    otp_url = account.get("2fa_link",None)
 
     try:
         client = Client('en-US')
@@ -57,10 +61,15 @@ async def get_or_create_client(account):
                 
         except ValueError:
             logging.info(f"Logging in for {username}.")
+            if otp_url:
+                pass
+                #otp = requests.get(url=otp_url).json()["data"]["otp"]
+
             await client.login(
-                auth_info_1=account["username"],
-                auth_info_2=account["email"],
-                password=account["password"]
+                auth_info_1 = username,
+                auth_info_2 = email,
+                password = password,
+                #totp_secret = otp
             )
             if not await test_account(client, username):
                 return None
