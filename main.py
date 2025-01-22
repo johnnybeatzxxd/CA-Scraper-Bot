@@ -141,7 +141,7 @@ async def main(TARGET, CHECK_INTERVAL):
     safe_interval = (RATE_LIMIT_WINDOW / total_requests_per_window) * 1.2
     
     # Use the calculated interval or the minimum CHECK_INTERVAL, whichever is larger
-    check_interval = max(safe_interval, CHECK_INTERVAL)
+    check_interval = safe_interval
     
     logging.info(f"Calculated interval: {check_interval:.2f} seconds with {num_clients} clients")
     #bot.send_message(533017326, f"Running with interval: {check_interval:.2f} seconds using {num_clients} clients")
@@ -176,7 +176,7 @@ async def main(TARGET, CHECK_INTERVAL):
                 continue
 
         logging.info("Waiting for the next check...")
-        random_seconds = random.randint(0, 10)/10
+        random_seconds = random.randint(0, 5)/10
         print(f"Sleeping for {check_interval + random_seconds} seconds")
         await asyncio.sleep(check_interval + random_seconds)
 

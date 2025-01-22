@@ -87,17 +87,10 @@ def setup_accounts():
         for account in new_accounts:
             if 'auth_token' in account and 'ct0' in account:
                 cookie_data = {
-                    account['username']: {
+                    "username": account["username"],
+                    "cookies": {
                         "auth_token": account['auth_token'],
                         "ct0": account['ct0'],
-                        "_twitter_sess": "",
-                        "att": "",
-                        "guest_id": "",
-                        "guest_id_ads": "",
-                        "guest_id_marketing": "",
-                        "kdt": "",
-                        "personalization_id": "",
-                        "twid": ""
                     }
                 }
                 cookie_operations.append(UpdateOne(
