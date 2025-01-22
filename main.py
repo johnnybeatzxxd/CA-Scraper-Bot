@@ -7,6 +7,7 @@ from send_message import send_message_to_bot
 import logging
 import random
 import telebot
+from get_ca import get_contract_address
 from pymongo import MongoClient
 
 load_dotenv()
@@ -35,8 +36,14 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 async def callback(tweet: Tweet) -> None:
     logging.info(f"New tweet posted: {tweet.text}")
-    await send_message_to_bot(your_message=tweet.text)
+    result = get_contract_address(tweet.text)
+
+    if result != [] and result is not None:
+        await send_message_to_bot(your_message=result[0])
+        bot.send_message(533017326,f"New tweet posted: {tweet.text}")
+        bot.send_message(533017326,f"CA Found: {result[0]}")
     bot.send_message(533017326,f"New tweet posted: {tweet.text}")
+    bot.send_message(533017326,f"No CA Found!")
 
 class MaxRetriesExceededError(Exception):
     """Custom exception for handling max retries exceeded."""
@@ -77,7 +84,7 @@ async def initialize_clients():
     for account in all_accounts:
         try:
             # Add delay between account initialization attempts
-            await asyncio.sleep(3)
+            # await asyncio.sleep(3)
             
             client = await get_or_create_client(account)
             if client:
