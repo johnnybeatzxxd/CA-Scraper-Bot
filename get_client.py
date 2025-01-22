@@ -51,7 +51,7 @@ async def get_or_create_client(account):
                 if not await test_account(client, username):
                     # Remove invalid cookies from MongoDB
                     cookies_collection.delete_one({"username": username})
-                    return None
+                    raise ValueError("No valid cookie found for this account.")
             else:
                 raise ValueError("No valid cookie found for this account.")
                 

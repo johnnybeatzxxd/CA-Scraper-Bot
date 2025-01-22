@@ -52,27 +52,55 @@ async def get_latest_tweet(user, client) -> list:
 
 async def initialize_clients():
     clients = []
-    # Get credentials from MongoDB instead of JSON file
+    all_accounts = []
+    failed_accounts = []
+    successful_accounts = []
+    
+    # Get credentials from MongoDB
     credentials_docs = credentials_collection.find({})
     
+    # First, collect all accounts (both offline and online)
     for doc in credentials_docs:
-        # Access the accounts array in the document
-        accounts = doc.get('accounts', [])
-        for account in accounts:
-            try:
-                # Extract username, email, and password from the nested account object
-                client = await get_or_create_client({
-                    'username': account.get('username'),
-                    'email': account.get('email'),
-                    'password': account.get('password')
-                })
-                if client:
-                    clients.append(client)
-            except Exception as e:
-                logging.error(f"Failed to initialize client for {account.get('username', 'unknown')}: {e}")
+        # Get offline accounts first
+        offline_accounts = doc.get('offline', [])
+        for account in offline_accounts:
+            account['offline'] = True
+            all_accounts.append(account)
+            
+        # Then get regular accounts
+        online_accounts = doc.get('accounts', [])
+        for account in online_accounts:
+            account['offline'] = False
+            all_accounts.append(account)
     
-    logging.info(f"{len(clients)} clients initialized.")
-    bot.send_message(533017326,f"{len(clients)} clients initialized.")
+    # Try to initialize clients for all accounts
+    for account in all_accounts:
+        try:
+            # Add delay between account initialization attempts
+            await asyncio.sleep(3)
+            
+            client = await get_or_create_client(account)
+            if client:
+                clients.append(client)
+                successful_accounts.append(account['username'])
+                logging.info(f"Successfully initialized client for {account['username']}")
+            else:
+                failed_accounts.append(account['username'])
+                logging.warning(f"Failed to initialize client for {account['username']}")
+        except Exception as e:
+            failed_accounts.append(account['username'])
+            logging.error(f"Failed to initialize client for {account.get('username', 'unknown')}: {e}")
+    
+    # Send summary message through telegram
+    summary_message = (
+        f"Client Initialization Summary:\n"
+        f"✅ Successful ({len(successful_accounts)}): {', '.join(successful_accounts)}\n"
+        f"❌ Failed ({len(failed_accounts)}): {', '.join(failed_accounts)}\n"
+        f"Total clients initialized: {len(clients)}"
+    )
+    bot.send_message(533017326, summary_message)
+    
+    logging.info(f"{len(clients)} clients initialized successfully.")
     return clients
 
 # --- Control flag and stop function ---
@@ -93,6 +121,7 @@ async def main(TARGET, CHECK_INTERVAL):
     if num_clients == 0:
         logging.error("No clients initialized. Exiting...")
         bot.send_message(533017326,"No clients initialized. Exiting...")
+        bot.send_message(533017326,f"script stopped")
         return
 
     index = 0
