@@ -1,10 +1,12 @@
 import asyncio
 import logging
-from telethon import events
+from telethon import events, types
 from send_message import get_telegram_connection
 from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
+from get_ca import get_contract, get_contract_address, get_text
+import base64
 
 # Configure logging
 logging.basicConfig(
@@ -62,9 +64,43 @@ async def main(TARGET, CHECK_INTERVAL):
             if not running:
                 return
             try:
-                message = event.message.text
-                await client.send_message(bot_username, message)
-                logger.info(f"Message forwarded from {TARGET}: {message[:50]}...")
+                message = event.message
+                
+                # Check if the message contains text
+                if message.text:
+                    contract_addresses = get_contract_address(message.text)
+                    if contract_addresses:
+                        # only send the first contract address
+                        await client.send_message(bot_username, contract_addresses[0])
+                        logger.info(f"Contract address forwarded from {TARGET}: {contract_addresses[0]}")
+                
+                # Check if the message contains media (photo)
+                if message.media:
+                    if isinstance(message.media, types.MessageMediaPhoto):
+                        photo = message.photo
+                        
+                        # Download the photo to memory
+                        photo_data = await client.download_media(photo, file=bytes)
+                        
+                        # Encode the photo data to base64
+                        base64_photo = base64.b64encode(photo_data).decode('utf-8')
+                        
+                        # Extract text from the photo using get_text
+                        text = get_text(base64_photo, type="base64")
+
+                        if text:
+                            contract_addresses = get_contract_address(text)
+                            if contract_addresses:
+                                for contract_address in contract_addresses:
+                                    await client.send_message(bot_username, contract_address)
+                                    logger.info(f"Contract address forwarded from {TARGET}: {contract_address}")
+                            else:
+                                logger.info("No contract addresses found in the image.")
+                        else:
+                            logger.error("Failed to extract text from the image.")
+                    else:
+                        logger.info("Message contains unsupported media type.")
+
             except Exception as e:
                 logger.error(f"Message forward error: {str(e)}")
 

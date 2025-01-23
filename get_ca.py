@@ -3,21 +3,42 @@ import logging
 import requests
 
 
-def get_text(url):
+def get_text(data, type="url"):
     endpoint = "https://ocr-extract-text.p.rapidapi.com/ocr"
-
-    querystring = {"url":url}
-
     headers = {
         "x-rapidapi-key": "7332d10eabmshe3583ada7bc70a2p13b937jsnb5bd2c435279",
-        "x-rapidapi-host": "ocr-extract-text.p.rapidapi.com"
+        "x-rapidapi-host": "ocr-extract-text.p.rapidapi.com",
     }
 
-    response = requests.get(endpoint, headers=headers, params=querystring).json()
-    print(f"response:",response["status"])
-    if response["status"]:
-        return response["text"]
-    return
+    try:
+        if type == "url":
+            querystring = {"url": data}
+            response = requests.get(endpoint, headers=headers, params=querystring)
+        else:
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            payload = {"base64": data}
+            response = requests.post(endpoint, headers=headers, data=payload)
+
+        response.raise_for_status()
+
+        if response.text:
+            response_json = response.json()
+            print(f"response:", response_json.get("status"))
+            if response_json.get("status"):
+                return response_json.get("text")
+            else:
+                logging.error(f"OCR API returned an error: {response_json.get('error')}")
+                return None
+        else:
+            logging.error("OCR API returned an empty response.")
+            return None
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error during OCR API request: {e}")
+        return None
+    except ValueError as e:
+        logging.error(f"Error decoding JSON response: {e}")
+        return None
 
 
 def get_contract_address(text) -> list:
@@ -62,7 +83,7 @@ def get_contract(tweet):
                 image_url = media.get("media_url_https")
                 logging.info(f"Processing image: {image_url}")
                 
-                text = get_text(url=image_url)
+                text = get_text(data=image_url)
                 if text:
                     contracts = get_contract_address(text)
                     if contracts:  # If contracts were found in image
@@ -80,7 +101,7 @@ def main():
         if image_url:
             # Test get_text function
             print("\nProcessing image...")
-            text = get_text(image_url)
+            text = get_text(data=image_url)
             if text:
                 print("\nExtracted text from image:")
                 print("-" * 50)
