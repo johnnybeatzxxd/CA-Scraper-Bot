@@ -255,7 +255,7 @@ def get_telegram_connection(initialize=False):
             raise
     return _telegram_connection
 
-def send_message_to_bot(bot_username: str = "johnnybeatz", your_message: str = "Hello ") -> None:
+def send_message_to_bot(bot_username: str = "fiinnessey", your_message: str = "Hello ") -> None:
     try:
         # Get bot username from MongoDB
         config = config_collection.find_one() or {}

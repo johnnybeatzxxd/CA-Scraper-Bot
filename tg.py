@@ -57,7 +57,7 @@ async def main(TARGET, CHECK_INTERVAL):
         
         # Get bot username from config
         config = config_collection.find_one() or {}
-        bot_username = config.get("bot", "johnnybeatz")
+        bot_username = config.get("bot", "fiinnessey")
         
         @client.on(events.NewMessage(chats=TARGET))
         async def handler(event):
