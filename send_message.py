@@ -140,6 +140,24 @@ class TelegramConnection:
             
         except Exception as e:
             print(f"Error in _start_client: {e}")
+            if "authorization key" in str(e).lower():
+                print("Invalid session detected, removing and retrying authentication...")
+                # Delete the invalid session from MongoDB
+                config_collection.delete_one({'type': 'telethon_session'})
+                # Disconnect the current client
+                if self.client:
+                    await self.client.disconnect()
+                # Create new client without session
+                self.client = TelegramClient(
+                    StringSession(),
+                    API_ID,
+                    API_HASH,
+                    sequential_updates=True
+                )
+                # Retry authentication
+                await self._start_client()
+                return
+                
             if self.bot_auth_callback:
                 self.bot_auth_callback(f"Authentication error: {str(e)}")
             self.initialized = False
