@@ -47,19 +47,24 @@ def start_script():
             logging.error("Target is not set")
             return "Target is not set"
 
-        interval = configs.get("interval")
-        if interval is None or interval == "":
-            logging.error("Interval is not set")
-            return "Interval is not set"
+        interval = configs.get("interval", 1)  # Default to 1 second if not set
+        platform = configs.get("platform", "twitter").lower()  # Default to twitter if not set
         
-        logging.info(f"Starting script with target: {target} and interval: {interval}")
+        logging.info(f"Starting script with target: {target}, platform: {platform}")
 
         def run_main():
             global main_task
             logging.info("Setting up event loop in new thread")
             asyncio.set_event_loop(main_loop)
-            from main import main
-            main_task = main_loop.create_task(main(target, interval))
+            
+            # Choose platform-specific main function
+            if platform == "telegram":
+                from tg import main as telegram_main
+                main_task = main_loop.create_task(telegram_main(target, interval))
+            else:  # default to Twitter
+                from main import main as twitter_main
+                main_task = main_loop.create_task(twitter_main(target, interval))
+                
             try:
                 logging.info("Starting main task execution")
                 main_loop.run_until_complete(main_task)
@@ -74,7 +79,7 @@ def start_script():
         main_thread = threading.Thread(target=run_main)
         main_thread.start()
         logging.info("Script started successfully")
-        return "Script started!"
+        return f"Script started on {platform.capitalize()} platform!"
     else:
         logging.warning("Attempted to start script while it's already running")
         return "Script is already running!"
