@@ -6,7 +6,7 @@ import asyncio
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from utils import start_script, stop_script, change_config
-from send_message import send_message_to_bot
+from send_message import send_message_to_bot, get_telegram_connection
 from setup_accounts import setup_accounts 
 
 load_dotenv()
@@ -21,6 +21,10 @@ config_collection = db['configs']
 
 # Telegram Bot Setup
 bot = telebot.TeleBot(os.environ.get("TelegramBotToken"))
+
+# Add these global variables at the top with other imports
+telegram_connection = None
+ADMIN_USER_ID = os.getenv('ADMIN_USER_ID')  # Add this to your .env file
 
 def markups():
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True,row_width=2)   
@@ -47,9 +51,58 @@ def telegram_bot():
 
 @bot.message_handler(func=lambda message: True)
 def chat(message):
+    global telegram_connection
+    
+    # Check if we're waiting for authentication
+    if telegram_connection and telegram_connection.get_waiting_for():
+        if str(message.chat.id) != str(ADMIN_USER_ID):
+            bot.reply_to(message, "You are not authorized to perform this action.")
+            return
+            
+        handle_auth_request(message.chat.id, message)
+        return
+
     if message.text == "⚡ Start hunting":
-        response = start_script()
-        bot.reply_to(message, f"{response}", reply_markup=markups())
+        if str(message.chat.id) != str(ADMIN_USER_ID):
+            bot.reply_to(message, "You are not authorized to start the bot.")
+            return
+            
+        try:
+            if not telegram_connection:
+                bot.reply_to(message, "Initializing Telegram connection...")
+                telegram_connection = get_telegram_connection()
+                
+                def bot_auth_callback(msg):
+                    bot.send_message(ADMIN_USER_ID, msg)
+                    # Only start the script on successful authentication
+                    if msg == "Successfully authenticated with Telegram!":
+                        response = start_script()
+                        bot.send_message(ADMIN_USER_ID, f"{response}", reply_markup=markups())
+                        # Clear the callback after successful authentication
+                        telegram_connection.bot_auth_callback = lambda x: None
+                
+                telegram_connection.bot_auth_callback = bot_auth_callback
+                telegram_connection.initialize()
+                
+                if telegram_connection.is_connected():
+                    response = start_script()
+                    bot.reply_to(message, f"{response}", reply_markup=markups())
+                return
+            
+            if telegram_connection.is_connected():
+                bot.reply_to(message, "Telegram connection is ready!")
+                response = start_script()
+                bot.reply_to(message, f"{response}", reply_markup=markups())
+            else:
+                waiting_for = telegram_connection.get_waiting_for()
+                if waiting_for:
+                    bot.reply_to(message, f"Please provide your {waiting_for}.", reply_markup=markups())
+                else:
+                    bot.reply_to(message, "Connection failed. Please try again.", reply_markup=markups())
+                
+        except Exception as e:
+            bot.reply_to(message, f"Error initializing Telegram: {str(e)}", reply_markup=markups())
+            return
 
     elif message.text == "🛑 Stop hunting":
         response = stop_script()
@@ -377,5 +430,18 @@ def get_configs():
         print(f"Error fetching configs from MongoDB: {e}")
         return {}
 
+def handle_auth_request(chat_id, message):
+    """Handle authentication code/password from user"""
+    if telegram_connection:
+        waiting_for = telegram_connection.get_waiting_for()
+        if waiting_for == 'code':
+            telegram_connection.set_auth_data('code', message.text.strip())
+            bot.reply_to(message, "Verification code received, processing...")
+        elif waiting_for == 'password':
+            telegram_connection.set_auth_data('password', message.text.strip())
+            bot.reply_to(message, "2FA password received, processing...")
+
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=True)
+
+

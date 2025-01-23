@@ -173,7 +173,7 @@ async def main(TARGET, CHECK_INTERVAL):
                 continue
 
         logging.info("Waiting for the next check...")
-        random_seconds = random.randint(0, 5)/10
+        random_seconds = random.randint(0, 3)/10
         print(f"Sleeping for {check_interval + random_seconds} seconds")
         await asyncio.sleep(check_interval + random_seconds)
 
