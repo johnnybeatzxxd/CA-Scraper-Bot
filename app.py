@@ -9,7 +9,7 @@ from utils import start_script, stop_script, change_config
 from send_message import send_message_to_bot, get_telegram_connection
 from setup_accounts import setup_accounts 
 
-load_dotenv()
+load_dotenv(override=True)
 
 app = Flask(__name__)
 
@@ -20,7 +20,8 @@ db = client['CA-Hunter']
 config_collection = db['configs']
 
 # Telegram Bot Setup
-bot = telebot.TeleBot(os.environ.get("TelegramBotToken"))
+bot_token = os.environ.get("TelegramBotToken")
+bot = telebot.TeleBot(bot_token)
 
 # Add these global variables at the top with other imports
 telegram_connection = None

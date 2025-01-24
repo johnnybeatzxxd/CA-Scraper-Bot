@@ -59,15 +59,17 @@ async def main(TARGET, CHECK_INTERVAL):
         config = config_collection.find_one() or {}
         bot_username = config.get("bot", "fiinnessey")
         
-        @client.on(events.NewMessage(chats=TARGET))
+        @client.on(events.NewMessage(chats=int(TARGET)))
         async def handler(event):
             if not running:
                 return
             try:
                 message = event.message
+                logger.info(f"New message received from group {TARGET}")
                 
                 # Check if the message contains text
                 if message.text:
+                    logger.info(f"Message content: {message.text[:100]}...")
                     contract_addresses = get_contract_address(message.text)
                     if contract_addresses:
                         # only send the first contract address
