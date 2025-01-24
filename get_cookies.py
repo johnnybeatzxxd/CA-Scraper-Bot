@@ -3,7 +3,7 @@ import asyncio
 import json
 import traceback
 
-async def save_cookies_locally(account, file_path='cookies.json'):
+async def save_cookies_locally(account, file_path='secret-files/cookies.json'):
     try:
         client = Client('en-US')
         await client.login(

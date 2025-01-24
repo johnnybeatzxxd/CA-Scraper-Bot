@@ -17,7 +17,7 @@ def migrate_configs():
     
     # Read configs.json
     try:
-        with open('configs.json', 'r') as f:
+        with open('secret-files/configs.json', 'r') as f:
             configs = json.load(f)
         
         # Insert or update configs
@@ -36,7 +36,7 @@ def migrate_credentials():
     
     # Read credentials.json
     try:
-        with open('credintials.json', 'r') as f:
+        with open('secret-files/credintials.json', 'r') as f:
             credentials = json.load(f)
         
         # Insert credentials
@@ -51,7 +51,7 @@ def migrate_cookies():
     
     # Read cookies.json
     try:
-        with open('cookies.json', 'r') as f:
+        with open('secret-files/cookies.json', 'r') as f:
             cookies_data = json.load(f)
         
         # Convert the cookies data structure to array of documents
