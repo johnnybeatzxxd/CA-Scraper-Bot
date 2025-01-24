@@ -1,12 +1,17 @@
 import re
 import logging
 import requests
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
+
+api_key = os.getenv("OCR_API")
 
 def get_text(data, type="url"):
     endpoint = "https://ocr-extract-text.p.rapidapi.com/ocr"
     headers = {
-        "x-rapidapi-key": "7332d10eabmshe3583ada7bc70a2p13b937jsnb5bd2c435279",
+        "x-rapidapi-key": api_key,
         "x-rapidapi-host": "ocr-extract-text.p.rapidapi.com",
     }
 
