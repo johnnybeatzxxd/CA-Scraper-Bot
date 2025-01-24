@@ -9,6 +9,7 @@ import random
 import telebot
 from get_ca import get_contract
 from pymongo import MongoClient
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -40,6 +41,15 @@ async def callback(tweet: Tweet) -> None:
     logging.info(f"New tweet posted: {tweet.text}")
     result = get_contract(tweet)
 
+    if tweet.retweeted_tweet:
+        logging.info("its retweets so im passing!")
+        return
+    
+
+    # Check if the tweet was posted within the last 5 minutes
+    if tweet.created_at < datetime.utcnow() - timedelta(minutes=5):
+        logging.info("Tweet is older than 5 minutes, skipping.")
+        return
     if result:
         await send_message_to_bot(your_message=result[0])
         bot.send_message(ADMIN_USER_ID,f"New tweet posted: {tweet.text}")

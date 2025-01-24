@@ -76,8 +76,8 @@ def chat(message):
                     bot.send_message(ADMIN_USER_ID, msg)
                     # Only start the script on successful authentication
                     if msg == "Successfully authenticated with Telegram!":
-                        response = start_script()
-                        bot.send_message(ADMIN_USER_ID, f"{response}", reply_markup=markups())
+                        # response = start_script()
+                        # bot.send_message(ADMIN_USER_ID, f"{response}", reply_markup=markups())
                         # Clear the callback after successful authentication
                         telegram_connection.bot_auth_callback = lambda x: None
                 

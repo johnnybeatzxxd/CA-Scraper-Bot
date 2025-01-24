@@ -64,7 +64,10 @@ class TelegramConnection:
 
     def initialize(self):
         """Explicitly initialize the client when needed"""
-        if not self.initialized:
+        if not self.initialized or not self.is_connected():
+            # Reset connection state
+            self._connection_event.clear()
+            self._auth_data = {'code': None, 'password': None, 'waiting_for': None}
             self._setup_client()
 
     def set_auth_data(self, auth_type, value):
@@ -112,6 +115,9 @@ class TelegramConnection:
             await self.client.connect()
             
             if not await self.client.is_user_authorized():
+                self.initialized = False
+                self._connection_event.clear()
+                
                 print("User not authorized. Requesting code...")
                 if self.bot_auth_callback:
                     self.bot_auth_callback("You need to authenticate. Sending verification code to your phone...")
@@ -125,7 +131,16 @@ class TelegramConnection:
                 except SessionPasswordNeededError:
                     print("2FA enabled, requesting password...")
                     password = self.password_callback()
-                    await self.client.sign_in(password=password)
+                    try:
+                        await self.client.sign_in(password=password)
+                    except Exception as e:
+                        print(f"Error during 2FA: {e}")
+                        # Clear session on 2FA failure
+                        config_collection.delete_one({'type': 'telethon_session'})
+                        await self.client.disconnect()
+                        self.initialized = False
+                        self._connection_event.clear()
+                        raise
                 
                 # Save session after successful authentication
                 session_string = self.client.session.save()
@@ -140,8 +155,11 @@ class TelegramConnection:
             
         except Exception as e:
             print(f"Error in _start_client: {e}")
-            if "authorization key" in str(e).lower():
-                print("Invalid session detected, removing and retrying authentication...")
+            self.initialized = False
+            self._connection_event.clear()
+            
+            if "authorization key" in str(e).lower() or "password" in str(e).lower():
+                print("Invalid session or password detected, removing and retrying authentication...")
                 # Delete the invalid session from MongoDB
                 config_collection.delete_one({'type': 'telethon_session'})
                 # Disconnect the current client
@@ -160,7 +178,6 @@ class TelegramConnection:
                 
             if self.bot_auth_callback:
                 self.bot_auth_callback(f"Authentication error: {str(e)}")
-            self.initialized = False
             raise
 
     def _run_client(self):
@@ -203,16 +220,27 @@ class TelegramConnection:
     def _setup_client(self):
         if not self.initialized:
             try:
+                # Reset any existing client and thread
+                if self.client:
+                    if self.loop and self.loop.is_running():
+                        asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
+                    self.client = None
+                if self.thread and self.thread.is_alive():
+                    self.thread = None
+                
                 self.thread = threading.Thread(target=self._run_client, daemon=True)
                 self.thread.start()
                 
                 # Wait for connection with timeout
-                if not self._connection_event.wait(timeout=60):
+                if not self._connection_event.wait(timeout=90):
                     print("Timeout waiting for Telegram client initialization")
+                    self.initialized = False
+                    self._connection_event.clear()
                     raise RuntimeError("Timeout waiting for Telegram client initialization")
-                
             except Exception as e:
                 print(f"Error in setup_client: {e}")
+                self.initialized = False
+                self._connection_event.clear()
                 raise
 
     def send_message(self, username, message):
