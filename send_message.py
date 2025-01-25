@@ -252,10 +252,6 @@ class TelegramConnection:
             
             async def _send():
                 try:
-                    try: 
-                        username = int(username)
-                    except:
-                        pass
                     await self.client.send_message(username, message)
                     return True
                 except Exception as e:
