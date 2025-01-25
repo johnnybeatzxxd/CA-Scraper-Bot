@@ -46,10 +46,7 @@ async def callback(tweet: Tweet) -> None:
         return
     
 
-    # Check if the tweet was posted within the last 5 minutes
-    if tweet.created_at < datetime.utcnow() - timedelta(minutes=5):
-        logging.info("Tweet is older than 5 minutes, skipping.")
-        return
+
     if result:
         await send_message_to_bot(your_message=result[0])
         bot.send_message(ADMIN_USER_ID,f"New tweet posted: {tweet.text}")
