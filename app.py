@@ -56,17 +56,17 @@ def chat(message):
     
     # Check if we're waiting for authentication
     if telegram_connection and telegram_connection.get_waiting_for():
-        if str(message.chat.id) != str(ADMIN_USER_ID):
-            bot.reply_to(message, "You are not authorized to perform this action.")
-            return
+        # if str(message.chat.id) != str(ADMIN_USER_ID):
+        #     bot.reply_to(message, "You are not authorized to perform this action.")
+        #     return
             
         handle_auth_request(message.chat.id, message)
         return
 
     if message.text == "⚡ Start hunting":
-        if str(message.chat.id) != str(ADMIN_USER_ID):
-            bot.reply_to(message, "You are not authorized to start the bot.")
-            return
+        # if str(message.chat.id) != str(ADMIN_USER_ID):
+        #     bot.reply_to(message, "You are not authorized to start the bot.")
+        #     return
             
         try:
             if not telegram_connection:
@@ -74,7 +74,7 @@ def chat(message):
                 telegram_connection = get_telegram_connection()
                 
                 def bot_auth_callback(msg):
-                    bot.send_message(ADMIN_USER_ID, msg)
+                    bot.send_message(message.chat.id, msg)
                     # Only start the script on successful authentication
                     if msg == "Successfully authenticated with Telegram!":
                         # response = start_script()
