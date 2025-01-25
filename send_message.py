@@ -244,6 +244,7 @@ class TelegramConnection:
                 raise
 
     def send_message(self, username, message):
+        
         try:
             if not self.is_connected():
                 print("Client not connected, attempting to reconnect...")
@@ -251,6 +252,10 @@ class TelegramConnection:
             
             async def _send():
                 try:
+                    try: 
+                        username = int(username)
+                    except:
+                        pass
                     await self.client.send_message(username, message)
                     return True
                 except Exception as e:
