@@ -56,7 +56,7 @@ def parse_accounts(filename='accounts.txt'):
     print(f"Total accounts parsed: {len(accounts)}")  # Debug line
     return accounts
 
-def setup_accounts():
+def setup_accounts(user_id):
     load_dotenv()
     
     accounts = parse_accounts()
@@ -64,8 +64,11 @@ def setup_accounts():
         return []
         
     try:
-        # Get existing accounts in a single query
-        existing_doc = credentials_collection.find_one({}, {'accounts.username': 1, 'offline.username': 1})
+        # Get existing accounts in a single query for specific user
+        existing_doc = credentials_collection.find_one(
+            {"user_id": user_id},
+            {'accounts.username': 1, 'offline.username': 1}
+        )
         
         # Extract usernames more efficiently
         existing_usernames = set()
@@ -88,13 +91,17 @@ def setup_accounts():
             if 'auth_token' in account and 'ct0' in account:
                 cookie_data = {
                     "username": account["username"],
+                    "user_id": user_id,
                     "cookies": {
                         "auth_token": account['auth_token'],
                         "ct0": account['ct0'],
                     }
                 }
                 cookie_operations.append(UpdateOne(
-                    {account['username']: {"$exists": True}},
+                    {
+                        "username": account['username'],
+                        "user_id": user_id
+                    },
                     {"$set": cookie_data},
                     upsert=True
                 ))
@@ -102,7 +109,7 @@ def setup_accounts():
         # Perform bulk operations
         if new_accounts:
             credentials_collection.update_one(
-                {},
+                {"user_id": user_id},
                 {'$push': {'accounts': {'$each': new_accounts}}},
                 upsert=True
             )

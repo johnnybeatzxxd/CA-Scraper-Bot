@@ -32,7 +32,7 @@ def stop_main():
     running = False
     logger.info("Stop flag set in Telegram platform")
 
-async def main(TARGET, CHECK_INTERVAL):
+async def main(TARGET, CHECK_INTERVAL, user_id):
     global running
     global message_handlers
     running = True
@@ -55,8 +55,8 @@ async def main(TARGET, CHECK_INTERVAL):
             client.remove_event_handler(handler)
         message_handlers.clear()
         
-        # Get bot username from config
-        config = config_collection.find_one() or {}
+        # Get bot username from config for specific user
+        config = config_collection.find_one({"user_id": user_id}) or {}
         bot_username = config.get("bot", "fiinnessey")
         
         @client.on(events.NewMessage(chats=int(TARGET)))
@@ -74,7 +74,7 @@ async def main(TARGET, CHECK_INTERVAL):
                     if contract_addresses:
                         # only send the first contract address
                         await client.send_message(bot_username, contract_addresses[0])
-                        logger.info(f"Contract address forwarded from {TARGET}: {contract_addresses[0]}")
+                        logger.info(f"Contract address forwarded from {TARGET} to {bot_username}: {contract_addresses[0]}")
                 
                 # Check if the message contains media (photo)
                 if message.media:
@@ -95,7 +95,7 @@ async def main(TARGET, CHECK_INTERVAL):
                             if contract_addresses:
                                 for contract_address in contract_addresses:
                                     await client.send_message(bot_username, contract_address)
-                                    logger.info(f"Contract address forwarded from {TARGET}: {contract_address}")
+                                    logger.info(f"Contract address forwarded from {TARGET} to {bot_username}: {contract_address}")
                             else:
                                 logger.info("No contract addresses found in the image.")
                         else:
@@ -136,7 +136,8 @@ async def main(TARGET, CHECK_INTERVAL):
 
 if __name__ == "__main__":
     target_channel = "@example_channel"
-    asyncio.run(main(target_channel, 1))
+    user_id = "test_user"  # Add default user_id for testing
+    asyncio.run(main(target_channel, 1, user_id))
 
 
 

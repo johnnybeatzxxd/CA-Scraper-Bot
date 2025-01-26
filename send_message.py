@@ -43,7 +43,10 @@ class TelegramConnection:
     def _get_session(self):
         """Get session string from MongoDB"""
         try:
-            config = config_collection.find_one({'type': 'telethon_session'})
+            config = config_collection.find_one({
+                'type': 'telethon_session',
+                'user_id': self.user_id  # Add user_id to query
+            })
             if config and 'session_string' in config:
                 return config['session_string']
         except Exception as e:
@@ -54,7 +57,10 @@ class TelegramConnection:
         """Save session string to MongoDB"""
         try:
             config_collection.update_one(
-                {'type': 'telethon_session'},
+                {
+                    'type': 'telethon_session',
+                    'user_id': self.user_id  # Add user_id to query
+                },
                 {'$set': {'session_string': session_string}},
                 upsert=True
             )
@@ -284,13 +290,13 @@ def get_telegram_connection(initialize=False):
             raise
     return _telegram_connection
 
-def send_message_to_bot(bot_username: str = "fiinnessey", your_message: str = "Hello ") -> None:
+def send_message_to_bot(bot_username: str = "fiinnessey", your_message: str = "Hello ", user_id: str = None) -> None:
     try:
-        # Get bot username from MongoDB
-        config = config_collection.find_one() or {}
+        # Get bot username from MongoDB for specific user
+        config = config_collection.find_one({"user_id": user_id}) or {}
         bot_username = config.get("bot", bot_username)  # Use default if not found
         
-        connection = get_telegram_connection(initialize=True)  # Initialize when sending message
+        connection = get_telegram_connection(initialize=True)
         if not connection.is_connected():
             print("Connection not established, attempting to reconnect...")
             connection.initialize()

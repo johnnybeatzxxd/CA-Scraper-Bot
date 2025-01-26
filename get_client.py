@@ -38,7 +38,7 @@ async def test_account(client, username):
     logging.info(f"Logged in successfully for {username}.")
     return True
 
-async def get_or_create_client(account):
+async def get_or_create_client(account, user_id):
     username = account["username"]
     email = account.get("email")
     password = account.get("password")
@@ -47,14 +47,20 @@ async def get_or_create_client(account):
     try:
         client = Client('en-US')
         try:
-            # Get cookies from MongoDB instead of file
-            cookie_doc = cookies_collection.find_one({"username": username})
+            # Get cookies from MongoDB with user_id
+            cookie_doc = cookies_collection.find_one({
+                "username": username,
+                "user_id": user_id
+            })
             
             if cookie_doc and cookie_doc.get('cookies'):
                 client.set_cookies(cookie_doc['cookies'])
                 if not await test_account(client, username):
                     # Remove invalid cookies from MongoDB
-                    cookies_collection.delete_one({"username": username})
+                    cookies_collection.delete_one({
+                        "username": username,
+                        "user_id": user_id
+                    })
                     raise ValueError("No valid cookie found for this account.")
             else:
                 raise ValueError("No valid cookie found for this account.")
@@ -74,12 +80,16 @@ async def get_or_create_client(account):
             if not await test_account(client, username):
                 return None
                 
-            # Save cookies to MongoDB
+            # Save cookies to MongoDB with user_id
             cookies_collection.update_one(
-                {"username": username},
+                {
+                    "username": username,
+                    "user_id": user_id
+                },
                 {
                     "$set": {
                         "username": username,
+                        "user_id": user_id,
                         "cookies": client.get_cookies()
                     }
                 },

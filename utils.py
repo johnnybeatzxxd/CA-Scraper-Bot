@@ -27,19 +27,19 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-def start_script():
+def start_script(user_id):
     global main_thread
     global main_loop
     global main_task
 
-    logging.info("Attempting to start script...")
+    logging.info(f"Attempting to start script for user {user_id}...")
 
     if main_thread is None or not main_thread.is_alive():
         logging.info("Creating new event loop and thread...")
         main_loop = asyncio.new_event_loop()
         
-        # get configs from MongoDB
-        configs = config_collection.find_one() or {}
+        # get configs from MongoDB with user_id
+        configs = config_collection.find_one({"user_id": user_id}) or {}
         logging.info("Retrieved configurations from MongoDB")
 
         target = configs.get("target")
@@ -47,8 +47,8 @@ def start_script():
             logging.error("Target is not set")
             return "Target is not set"
 
-        interval = configs.get("interval", 1)  # Default to 1 second if not set
-        platform = configs.get("platform", "twitter").lower()  # Default to twitter if not set
+        interval = configs.get("interval", 1)
+        platform = configs.get("platform", "twitter").lower()
         
         logging.info(f"Starting script with target: {target}, platform: {platform}")
 
@@ -121,10 +121,10 @@ def stop_script():
         logging.warning("Attempted to stop script while it's not running")
         return "Script is not running!"
 
-def change_config(key, value):
-    logging.info(f"Updating configuration - Key: {key}, Value: {value}")
+def change_config(user_id, key, value):
+    logging.info(f"Updating configuration for user {user_id} - Key: {key}, Value: {value}")
     config_collection.update_one(
-        {}, 
+        {"user_id": user_id},
         {'$set': {key: value}},
         upsert=True
     )

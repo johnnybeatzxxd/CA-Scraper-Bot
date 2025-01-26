@@ -53,6 +53,7 @@ def telegram_bot():
 @bot.message_handler(func=lambda message: True)
 def chat(message):
     global telegram_connection
+    user_id = str(message.chat.id)  # Get user_id from message
     
     # Check if we're waiting for authentication
     if telegram_connection and telegram_connection.get_waiting_for():
@@ -60,7 +61,7 @@ def chat(message):
         #     bot.reply_to(message, "You are not authorized to perform this action.")
         #     return
             
-        handle_auth_request(message.chat.id, message)
+        handle_auth_request(user_id, message)
         return
 
     if message.text == "⚡ Start hunting":
@@ -86,13 +87,13 @@ def chat(message):
                 telegram_connection.initialize()
                 
                 if telegram_connection.is_connected():
-                    response = start_script()
+                    response = start_script(user_id)  # Pass user_id
                     bot.reply_to(message, f"{response}", reply_markup=markups())
                 return
             
             if telegram_connection.is_connected():
                 bot.reply_to(message, "Telegram connection is ready!")
-                response = start_script()
+                response = start_script(user_id)  # Pass user_id
                 bot.reply_to(message, f"{response}", reply_markup=markups())
             else:
                 waiting_for = telegram_connection.get_waiting_for()
@@ -111,7 +112,7 @@ def chat(message):
 
     elif message.text == "👥 Workers":
         credentials_collection = db['credentials']
-        doc = credentials_collection.find_one({})
+        doc = credentials_collection.find_one({"user_id": user_id})  # Add user_id to query
         
         # Get both offline and online accounts
         offline_accounts = doc.get('offline', []) if doc else []
@@ -144,8 +145,8 @@ def chat(message):
         markup.row(bot_btn)
         markup.row(platform_btn)
 
-        configs = get_configs()
-        config_message = "\n".join([f"{key}: {value}" for key, value in configs.items() if key not in ['interval', 'max_retries']])
+        configs = get_configs(user_id)  # Add user_id parameter
+        config_message = "\n".join([f"{key}: {value}" for key, value in configs.items() if key not in ['interval', 'max_retries', 'user_id']])
         
         bot.reply_to(message, f"Current configurations\n\n{config_message}")
         bot.reply_to(message, "Choose what you want to configure:", reply_markup=markup)
@@ -179,7 +180,7 @@ def callback_query(call):
     
     elif call.data.startswith('platform_'):
         platform = call.data.split('_')[1]
-        change_config('platform', platform)
+        change_config(call.message.chat.id, 'platform', platform)
         bot.edit_message_text(chat_id=call.message.chat.id,
                             message_id=call.message.message_id,
                             text=f"Platform has been set to: {platform.capitalize()}",
@@ -319,15 +320,15 @@ def callback_query(call):
 
 def process_target_step(message):
     try:
-        target = message.text.strip()  
-        # Remove @ symbol if user included it
+        user_id = str(message.chat.id)  # Get user_id
+        target = message.text.strip()
         if target.startswith('@'):
             target = target[1:]
             
-        if not target:  # Check if username is empty
+        if not target:
             raise ValueError("Username cannot be empty")
             
-        change_config('target', target)
+        change_config(user_id, 'target', target)  # Pass user_id
         bot.reply_to(message, f"Target has been set to: @{target}", reply_markup=markups())
     except ValueError as e:
         bot.reply_to(message, f"Invalid username! Please try again.", reply_markup=markups())
@@ -338,7 +339,7 @@ def process_bot_step(message):
         if not bot_name:  # Check if bot name is empty
             raise ValueError("Bot name cannot be empty")
             
-        change_config('bot', bot_name)
+        change_config(message.chat.id, 'bot', bot_name)
         bot.reply_to(message, f"Bot has been set to: {bot_name}", reply_markup=markups())
     except ValueError as e:
         bot.reply_to(message, f"Invalid bot name! Please try again.", reply_markup=markups())
@@ -420,10 +421,9 @@ def process_file_upload(message):
             reply_markup=markups()
         )
 
-def get_configs():
+def get_configs(user_id):  # Add user_id parameter
     try:
-        configs = config_collection.find_one() or {}
-        # Remove MongoDB's _id field if it exists
+        configs = config_collection.find_one({"user_id": user_id}) or {}
         if '_id' in configs:
             del configs['_id']
         return configs

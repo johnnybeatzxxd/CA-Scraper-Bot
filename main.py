@@ -67,25 +67,24 @@ async def get_latest_tweet(user, client) -> list:
         bot.send_message(ADMIN_USER_ID,f"Error while fetching latest tweets for user {user.name}: {e}")
         raise MaxRetriesExceededError(f"Max retries exceeded for client {client}")
 
-async def initialize_clients():
+async def initialize_clients(user_id):
     clients = []
     all_accounts = []
     failed_accounts = []
     successful_accounts = []
     
-    # Get credentials from MongoDB
-    credentials_docs = credentials_collection.find({})
+    # Get credentials from MongoDB for specific user
+    credentials_doc = credentials_collection.find_one({"user_id": user_id})
     
-    # First, collect all accounts (both offline and online)
-    for doc in credentials_docs:
-        # Get offline accounts first
-        offline_accounts = doc.get('offline', [])
+    if credentials_doc:
+        # Get offline accounts
+        offline_accounts = credentials_doc.get('offline', [])
         for account in offline_accounts:
             account['offline'] = True
             all_accounts.append(account)
             
-        # Then get regular accounts
-        online_accounts = doc.get('accounts', [])
+        # Get regular accounts
+        online_accounts = credentials_doc.get('accounts', [])
         for account in online_accounts:
             account['offline'] = False
             all_accounts.append(account)
@@ -115,7 +114,7 @@ async def initialize_clients():
         f"❌ Failed ({len(failed_accounts)}): {', '.join(failed_accounts)}\n\n"
         f"Total clients initialized: {len(clients)}"
     )
-    bot.send_message(ADMIN_USER_ID, summary_message)
+    bot.send_message(user_id, summary_message)
     
     logging.info(f"{len(clients)} clients initialized successfully.")
     return clients
@@ -128,17 +127,17 @@ def stop_main():
     running = False
 # ---
 
-async def main(TARGET, CHECK_INTERVAL):
+async def main(TARGET, CHECK_INTERVAL, user_id):
     global running
     running = True
-    bot.send_message(ADMIN_USER_ID,f"Initializing clients...")
-    clients = await initialize_clients()
+    bot.send_message(user_id, f"Initializing clients...")
+    clients = await initialize_clients(user_id)
     num_clients = len(clients)
 
     if num_clients == 0:
         logging.error("No clients initialized. Exiting...")
-        bot.send_message(ADMIN_USER_ID,"No clients initialized. Exiting...")
-        bot.send_message(ADMIN_USER_ID,f"script stopped")
+        bot.send_message(user_id, "No clients initialized. Exiting...")
+        bot.send_message(user_id, f"script stopped")
         return
 
     #
@@ -162,12 +161,12 @@ async def main(TARGET, CHECK_INTERVAL):
         user = await clients[index].get_user_by_screen_name(TARGET)
     except Exception as e:
         logging.error(f"Failed to fetch user info for target {TARGET}: {e}")
-        bot.send_message(ADMIN_USER_ID,f"Error while fetching latest tweets for user {TARGET}: {e}")
-        bot.send_message(ADMIN_USER_ID,f"script stopped")
+        bot.send_message(user_id, f"Error while fetching latest tweets for user {TARGET}: {e}")
+        bot.send_message(user_id, f"script stopped")
         return
 
     before_tweet = None
-    bot.send_message(ADMIN_USER_ID,f"Searching for CA...")
+    bot.send_message(user_id, f"Searching for CA...")
     
     while running:
         if not before_tweet:
