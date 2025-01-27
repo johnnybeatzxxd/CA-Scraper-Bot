@@ -59,7 +59,7 @@ async def main(TARGET, CHECK_INTERVAL):
         config = config_collection.find_one() or {}
         bot_username = config.get("bot", "fiinnessey")
         
-        @client.on(events.NewMessage(chats=int(TARGET)))
+        @client.on(events.NewMessage(chats=TARGET))
         async def handler(event):
             if not running:
                 return
