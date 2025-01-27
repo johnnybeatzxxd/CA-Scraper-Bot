@@ -39,13 +39,22 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 async def callback(tweet: Tweet) -> None:
     logging.info(f"New tweet posted: {tweet.text}")
-    result = get_contract(tweet)
-
+    logging.info(f"New tweet posted: {tweet.text}")
+    logging.info(f"tweet created at: {tweet.created_at}")
+    
+    # Parse tweet creation time and check if it's older than 2 minutes
+    tweet_time = datetime.strptime(tweet.created_at, "%a %b %d %H:%M:%S %z %Y")
+    current_time = datetime.now(tweet_time.tzinfo)
+    time_difference = current_time - tweet_time
+    logging.info(time_difference)
+    if time_difference > timedelta(minutes=2):
+        logging.info("Tweet is older than 2 minutes, skipping processing")
+        return
+    
     if tweet.retweeted_tweet:
         logging.info("its retweets so im passing!")
         return
-    
-
+    result = get_contract(tweet)
 
     if result:
         await send_message_to_bot(your_message=result[0])
