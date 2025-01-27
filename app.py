@@ -26,6 +26,7 @@ bot = telebot.TeleBot(bot_token)
 # Add these global variables at the top with other imports
 telegram_connection = None
 ADMIN_USER_ID = os.getenv('ADMIN_USER_ID')  # Add this to your .env file
+selected_accounts_for_deletion = {}
 
 def markups():
     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True,row_width=2)   
@@ -155,6 +156,8 @@ def chat(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    global selected_accounts_for_deletion
+    
     if call.data == "set_target":
         msg = bot.send_message(call.message.chat.id, 
                              "Please enter the username to target (without @ symbol):", 
@@ -253,6 +256,9 @@ def callback_query(call):
         bot.register_next_step_handler(msg, process_file_upload)
 
     elif call.data == "delete_worker":
+        # Clear previous selections when opening delete menu
+        selected_accounts_for_deletion[call.message.chat.id] = []
+        
         credentials_collection = db['credentials']
         doc = credentials_collection.find_one({})
         
@@ -274,7 +280,7 @@ def callback_query(call):
         for account in online_accounts:
             btn = telebot.types.InlineKeyboardButton(
                 f"@{account['username']} - ✅", 
-                callback_data=f"del_{account['username']}_good"
+                callback_data=f"select_{account['username']}_good"
             )
             markup.row(btn)
         
@@ -282,40 +288,98 @@ def callback_query(call):
         for account in offline_accounts:
             btn = telebot.types.InlineKeyboardButton(
                 f"@{account['username']} - ❌", 
-                callback_data=f"del_{account['username']}_bad"
+                callback_data=f"select_{account['username']}_bad"
             )
             markup.row(btn)
+
+        # Add confirm delete button
+        confirm_btn = telebot.types.InlineKeyboardButton(
+            "🗑️ Delete Selected", 
+            callback_data="confirm_delete"
+        )
+        markup.row(confirm_btn)
         
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            text="Select account to delete:",
+            text="Select accounts to delete (click multiple):",
+            reply_markup=markup
+        )
+
+    elif call.data.startswith('select_'):
+        # Split the callback data to get username and status
+        _, username, status = call.data.split('_')
+        
+        # Initialize selected accounts for this chat if not exists
+        if call.message.chat.id not in selected_accounts_for_deletion:
+            selected_accounts_for_deletion[call.message.chat.id] = []
+        
+        # Toggle selection
+        account_info = {'username': username, 'status': status}
+        current_selections = selected_accounts_for_deletion[call.message.chat.id]
+        
+        if any(acc['username'] == username for acc in current_selections):
+            selected_accounts_for_deletion[call.message.chat.id] = [
+                acc for acc in current_selections if acc['username'] != username
+            ]
+        else:
+            selected_accounts_for_deletion[call.message.chat.id].append(account_info)
+        
+        # Update message to show selected accounts
+        current_selections = selected_accounts_for_deletion[call.message.chat.id]
+        if current_selections:
+            selected_text = "Selected accounts:\n"
+            for acc in current_selections:
+                status_emoji = "✅" if acc['status'] == 'good' else "❌"
+                selected_text += f"@{acc['username']} {status_emoji}\n"
+        else:
+            selected_text = "Select accounts to delete (click multiple):"
+        
+        # Keep the same markup as before
+        markup = call.message.reply_markup
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=selected_text,
             reply_markup=markup
         )
         
-    elif call.data.startswith('del_'):
-        # Split the callback data to get username and status
-        _, username, status = call.data.split('_')
+    elif call.data == "confirm_delete":
+        current_selections = selected_accounts_for_deletion.get(call.message.chat.id, [])
+        if not current_selections:
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="No accounts selected for deletion.",
+            )
+            return
+            
         credentials_collection = db['credentials']
         
-        # Remove from the appropriate array based on status
-        if status == 'good':
-            credentials_collection.update_one(
-                {},
-                {'$pull': {'accounts': {'username': username}}}
-            )
-        else:  # status == 'bad'
-            credentials_collection.update_one(
-                {},
-                {'$pull': {'offline': {'username': username}}}
-            )
+        # Delete selected accounts
+        for account in current_selections:
+            if account['status'] == 'good':
+                credentials_collection.update_one(
+                    {},
+                    {'$pull': {'accounts': {'username': account['username']}}}
+                )
+            else:  # status == 'bad'
+                credentials_collection.update_one(
+                    {},
+                    {'$pull': {'offline': {'username': account['username']}}}
+                )
         
+        deleted_accounts = ", ".join([f"@{acc['username']}" for acc in current_selections])
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            text=f"Account @{username} has been deleted.",
+            text=f"Deleted accounts: {deleted_accounts}",
         )
-        bot.send_message(call.message.chat.id, "Worker account deleted successfully!", reply_markup=markups())
+        
+        # Clear selections after deletion
+        selected_accounts_for_deletion[call.message.chat.id] = []
+        
+        bot.send_message(call.message.chat.id, "Worker accounts deleted successfully!", reply_markup=markups())
 
 def process_target_step(message):
     try:
