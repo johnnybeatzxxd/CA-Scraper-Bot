@@ -57,7 +57,7 @@ async def callback(tweet: Tweet) -> None:
     result = get_contract(tweet)
 
     if result:
-        await send_message_to_bot(your_message=result[0])
+        await send_message_to_bot(your_message=result[0])  # Now this await is valid
         bot.send_message(ADMIN_USER_ID,f"New tweet posted: {tweet.text}")
         bot.send_message(ADMIN_USER_ID,f"Contract Address Found: {result[0]}\n")
         return      
@@ -68,10 +68,16 @@ class MaxRetriesExceededError(Exception):
     """Custom exception for handling max retries exceeded."""
     pass
 
+class RateLimitError(Exception):
+    """Custom exception for handling rate limits."""
+    pass
+
 async def get_latest_tweet(user, client) -> list:
     try:
         return await client.get_user_tweets(user.id, "Tweets")
     except Exception as e:
+        if "Rate limit exceeded" in str(e) or "code':88" in str(e):
+            raise RateLimitError(f"Rate limit exceeded for client")
         logging.error(f"Error while fetching latest tweets for user {user.name}: {e}")
         bot.send_message(ADMIN_USER_ID,f"Error while fetching latest tweets for user {user.name}: {e}")
         raise MaxRetriesExceededError(f"Max retries exceeded for client {client}")
@@ -137,6 +143,15 @@ def stop_main():
     running = False
 # ---
 
+def recalculate_interval(num_clients):
+    RATE_LIMIT_REQUESTS = 50 
+    RATE_LIMIT_WINDOW = 15 * 60
+    
+    total_requests_per_window = RATE_LIMIT_REQUESTS * num_clients
+    # Add 20% safety margin
+    safe_interval = (RATE_LIMIT_WINDOW / total_requests_per_window) * 1.2
+    return safe_interval
+
 async def main(TARGET, CHECK_INTERVAL):
     global running
     running = True
@@ -171,7 +186,7 @@ async def main(TARGET, CHECK_INTERVAL):
         user = await clients[index].get_user_by_screen_name(TARGET)
     except Exception as e:
         logging.error(f"Failed to fetch user info for target {TARGET}: {e}")
-        bot.send_message(ADMIN_USER_ID,f"Error while fetching latest tweets for user {TARGET}: {e}")
+        bot.send_message(ADMIN_USER_ID,f"Failed to fetch user info for target {TARGET}: {e}")
         bot.send_message(ADMIN_USER_ID,f"script stopped")
         return
 
@@ -183,14 +198,23 @@ async def main(TARGET, CHECK_INTERVAL):
             try:
                 logging.info(f"Fetching initial tweets using client index {index}.")
                 before_tweet = await get_latest_tweet(user, clients[index])
-               
+            except RateLimitError:
+                logging.warning(f"Rate limit hit for client {index}, removing client")
+                bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed. Recalculating interval...")
+                clients.pop(index)
+                if not clients:
+                    bot.send_message(ADMIN_USER_ID, "❌ No clients remaining. Stopping script.")
+                    return
+                check_interval = recalculate_interval(len(clients))
+                index = index % len(clients)
+                continue
             except MaxRetriesExceededError:
                 logging.warning(f"Client at index {index} failed to fetch initial tweets.")
-                index = (index + 1) % num_clients
+                index = (index + 1) % len(clients)
                 continue
             except Exception as e:
                 logging.error(f"Unexpected error while fetching initial tweets: {e}")
-                index = (index + 1) % num_clients
+                index = (index + 1) % len(clients)
                 continue
 
         logging.info("Waiting for the next check...")
@@ -198,11 +222,21 @@ async def main(TARGET, CHECK_INTERVAL):
         print(f"Sleeping for {check_interval + random_seconds} seconds")
         await asyncio.sleep(check_interval + random_seconds)
 
-        index = (index + 1) % num_clients
+        index = (index + 1) % len(clients)
 
         logging.info(f"Fetching latest tweets using client index: {index}")
         try:
             latest_tweet = await get_latest_tweet(user, clients[index])
+        except RateLimitError:
+            logging.warning(f"Rate limit hit for client {index}, removing client")
+            bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed. Recalculating interval...")
+            clients.pop(index)
+            if not clients:
+                bot.send_message(ADMIN_USER_ID, "❌ No clients remaining. Stopping script.")
+                return
+            check_interval = recalculate_interval(len(clients))
+            index = index % len(clients)
+            continue
         except MaxRetriesExceededError:
             logging.warning(f"Client at index {index} failed to fetch latest tweets.")
             continue
@@ -214,7 +248,7 @@ async def main(TARGET, CHECK_INTERVAL):
 
         if difference:
             for item in difference:
-                index = (index + 1) % num_clients
+                index = (index + 1) % len(clients)
                 logging.info(f"Fetching full tweet details using client index: {index}")
                 try:
                     tweet = await clients[index].get_tweet_by_id(item.id)
