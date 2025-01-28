@@ -26,7 +26,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 MONGO_URL = os.getenv('MONGO_URL')
 mongo_client = MongoClient(MONGO_URL)
-db = mongo_client['CA-Hunter']  # Updated database name
+db = mongo_client['CA-Hunter1']  # Updated database name
 cookies_collection = db['cookies']  # New collection for cookies
 
 async def test_account(client, username):
