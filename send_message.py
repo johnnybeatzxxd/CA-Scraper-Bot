@@ -16,10 +16,6 @@ mongo_client = MongoClient(MONGO_URL)
 db = mongo_client['CA-Hunter']
 config_collection = db['configs']
 
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-PHONE_NUMBER = os.getenv("PHONE_NUMBER")
-
 class TelegramConnection:
     _instance = None
     _lock = threading.Lock()
@@ -39,6 +35,30 @@ class TelegramConnection:
             self.initialized = False
             self.bot_auth_callback = None
             self._connection_event = threading.Event()
+            # Get credentials from MongoDB
+            self.creds = config_collection.find_one({'type': 'telegram_creds'}) or {}
+            self.api_id = self.creds.get('api_id')
+            self.api_hash = self.creds.get('api_hash')
+            self.phone_number = self.creds.get('phone_number')
+            self._current_cred_hash = None
+            self._refresh_credentials()
+
+    def _refresh_credentials(self):
+        """Reload credentials from DB and check for changes"""
+        new_creds = config_collection.find_one({'type': 'telegram_creds'}) or {}
+        new_hash = hash(frozenset(new_creds.items()))
+        
+        if new_hash != self._current_cred_hash:
+            print("Credentials changed - resetting connection")
+            # Clear existing session when credentials change
+            config_collection.delete_one({'type': 'telethon_session'})
+            self.client = None
+            self.initialized = False
+            self._current_cred_hash = new_hash
+            self.creds = new_creds
+            self.api_id = new_creds.get('api_id')
+            self.api_hash = new_creds.get('api_hash')
+            self.phone_number = new_creds.get('phone_number')
 
     def _get_session(self):
         """Get session string from MongoDB"""
@@ -64,6 +84,8 @@ class TelegramConnection:
 
     def initialize(self):
         """Explicitly initialize the client when needed"""
+        self._refresh_credentials()
+        
         if not self.initialized or not self.is_connected():
             # Reset connection state
             self._connection_event.clear()
@@ -122,12 +144,12 @@ class TelegramConnection:
                 if self.bot_auth_callback:
                     self.bot_auth_callback("You need to authenticate. Sending verification code to your phone...")
                 
-                sent_code = await self.client.send_code_request(PHONE_NUMBER)
+                sent_code = await self.client.send_code_request(self.phone_number)
                 code = self.code_callback()
                 print(f"Got code, signing in...")
                 
                 try:
-                    await self.client.sign_in(PHONE_NUMBER, code)
+                    await self.client.sign_in(self.phone_number, code)
                 except SessionPasswordNeededError:
                     print("2FA enabled, requesting password...")
                     password = self.password_callback()
@@ -155,29 +177,29 @@ class TelegramConnection:
             
         except Exception as e:
             print(f"Error in _start_client: {e}")
+            # Clear session and reset connection
+            await self.client.disconnect()
+            self.client = None
             self.initialized = False
             self._connection_event.clear()
             
-            if "authorization key" in str(e).lower() or "password" in str(e).lower():
-                print("Invalid session or password detected, removing and retrying authentication...")
-                # Delete the invalid session from MongoDB
-                config_collection.delete_one({'type': 'telethon_session'})
-                # Disconnect the current client
-                if self.client:
-                    await self.client.disconnect()
-                # Create new client without session
-                self.client = TelegramClient(
-                    StringSession(),
-                    API_ID,
-                    API_HASH,
-                    sequential_updates=True
-                )
-                # Retry authentication
-                await self._start_client()
-                return
-                
+            # Add proper error feedback
+            error_msg = f"Authentication failed: {str(e)}"
+            if "phone number" in str(e).lower():
+                error_msg = "Invalid phone number format"
+            elif "api_id" in str(e).lower():
+                error_msg = "Invalid API ID"
+            
             if self.bot_auth_callback:
-                self.bot_auth_callback(f"Authentication error: {str(e)}")
+                self.bot_auth_callback(error_msg)
+            
+            # Create fresh client for retry
+            self.client = TelegramClient(
+                StringSession(),
+                self.api_id,
+                self.api_hash,
+                sequential_updates=True
+            )
             raise
 
     def _run_client(self):
@@ -185,22 +207,24 @@ class TelegramConnection:
             self.loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self.loop)
             
+            # Validate credentials before proceeding
+            if not all([self.api_id, self.api_hash, self.phone_number]):
+                raise ValueError("Missing Telegram credentials in database")
+
             # Try to get existing session
             session_string = self._get_session()
             if session_string:
-                print("Found existing session, trying to reuse...")
                 self.client = TelegramClient(
                     StringSession(session_string),
-                    API_ID,
-                    API_HASH,
+                    self.api_id,
+                    self.api_hash,
                     sequential_updates=True
                 )
             else:
-                print("No existing session found, creating new one...")
                 self.client = TelegramClient(
                     StringSession(),
-                    API_ID,
-                    API_HASH,
+                    self.api_id,
+                    self.api_hash,
                     sequential_updates=True
                 )
 
@@ -264,6 +288,30 @@ class TelegramConnection:
             print(f"Error in send_message: {e}")
             raise
 
+    def disconnect(self):
+        """Explicitly disconnect the client"""
+        try:
+            if self.client and self.loop:
+                print("Initiating Telegram client shutdown...")
+                async def _disconnect():
+                    try:
+                        if self.client.is_connected():
+                            await self.client.disconnect()
+                            print("Telegram client disconnected successfully")
+                        self.initialized = False
+                    except Exception as e:
+                        print(f"Error during disconnect: {str(e)}")
+                
+                # Wait for disconnection to complete
+                future = asyncio.run_coroutine_threadsafe(_disconnect(), self.loop)
+                future.result(timeout=10)  # Wait up to 10 seconds for disconnect
+                self.client = None
+                print("Telegram connection fully reset")
+        except Exception as e:
+            print(f"Error in disconnect: {str(e)}")
+        finally:
+            self._connection_event.clear()
+
 # Global instance
 _telegram_connection = None
 
@@ -284,15 +332,14 @@ def get_telegram_connection(initialize=False):
             raise
     return _telegram_connection
 
-def send_message_to_bot(bot_username: str = "fiinnessey", your_message: str = "Hello ") -> None:
+def send_message_to_bot(your_message: str = "Hello ") -> None:
     try:
-        # Get bot username from MongoDB
+        # Get bot username from config
         config = config_collection.find_one() or {}
-        bot_username = config.get("bot", bot_username)  # Use default if not found
+        bot_username = config.get("bot", "fiinnessey")
         
-        connection = get_telegram_connection(initialize=True)  # Initialize when sending message
+        connection = get_telegram_connection(initialize=True)
         if not connection.is_connected():
-            print("Connection not established, attempting to reconnect...")
             connection.initialize()
             
         connection.send_message(bot_username, your_message)

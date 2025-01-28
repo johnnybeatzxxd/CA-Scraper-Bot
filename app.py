@@ -77,25 +77,33 @@ def chat(message):
         #     return
             
         try:
+            if not all(config_collection.find_one({'type': 'telegram_creds'})):
+                bot.reply_to(message, "❌ No Telegram credentials set! Please configure them first.")
+                return
+                
             if not telegram_connection:
                 bot.reply_to(message, "Initializing Telegram connection...")
                 telegram_connection = get_telegram_connection()
                 
                 def bot_auth_callback(msg):
+                    global telegram_connection
                     bot.send_message(message.chat.id, msg)
-                    # Only start the script on successful authentication
                     if msg == "Successfully authenticated with Telegram!":
-                        # response = start_script()
-                        # bot.send_message(ADMIN_USER_ID, f"{response}", reply_markup=markups())
-                        # Clear the callback after successful authentication
+                        response = start_script()
+                        bot.send_message(message.chat.id, f"{response}", reply_markup=markups())
                         telegram_connection.bot_auth_callback = lambda x: None
-                
+                    elif "authentication failed" in msg.lower():
+                        telegram_connection = None
+                        bot.send_message(message.chat.id, "Authentication failed. Please try starting again.", 
+                                       reply_markup=markups())
+
                 telegram_connection.bot_auth_callback = bot_auth_callback
                 telegram_connection.initialize()
                 
-                if telegram_connection.is_connected():
-                    response = start_script()
-                    bot.reply_to(message, f"{response}", reply_markup=markups())
+                # Add retry mechanism
+                if not telegram_connection.is_connected():
+                    bot.reply_to(message, "Connection failed. Please check credentials and try again.", 
+                               reply_markup=markups())
                 return
             
             if telegram_connection.is_connected():
@@ -109,9 +117,11 @@ def chat(message):
                 else:
                     bot.reply_to(message, "Connection failed. Please try again.", reply_markup=markups())
                 
-        except Exception as e:
-            bot.reply_to(message, f"Error initializing Telegram: {str(e)}", reply_markup=markups())
-            return
+        except ValueError as e:
+            if "Missing Telegram credentials" in str(e):
+                bot.reply_to(message, "❌ Telegram credentials not configured! Use the 🔑 button to set them up.")
+            else:
+                bot.reply_to(message, f"Error: {str(e)}")
 
     elif message.text == "🛑 Stop hunting":
         response = stop_script()
@@ -575,6 +585,9 @@ def process_api_hash_step(message, api_id):
 def process_phone_step(message, api_id, api_hash):
     phone_number = message.text.strip()
     
+    # Clear existing session when credentials change
+    config_collection.delete_one({'type': 'telethon_session'})
+    
     # Save to MongoDB
     config_collection.update_one(
         {'type': 'telegram_creds'},
@@ -586,9 +599,22 @@ def process_phone_step(message, api_id, api_hash):
         upsert=True
     )
     
+   # Force disconnect existing connection
+    global telegram_connection
+    if telegram_connection:
+        try:
+            print("Disconnecting existing Telegram connection...")
+            telegram_connection.disconnect()  # Use the proper disconnect method
+            print("Successfully disconnected old connection")
+        except Exception as e:
+            print(f"Error disconnecting: {str(e)}")
+        finally:
+            telegram_connection = None  # Reset the connection instance
+    
     bot.send_message(message.chat.id, "✅ Telegram credentials saved successfully!", reply_markup=markups())
 
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=True)
+
 
 
