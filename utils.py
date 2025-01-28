@@ -13,7 +13,7 @@ from pymongo import MongoClient
 load_dotenv()
 MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
-db = client['CA-Hunter'] 
+db = client['CA-Hunter1'] 
 config_collection = db['configs']  
 
 main_loop = None
@@ -27,7 +27,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-def start_script():
+def start_script(user_id):
     global main_thread
     global main_loop
     global main_task
@@ -44,9 +44,19 @@ def start_script():
 
         target = configs.get("target")
         if target is None or target == "":
-            logging.error("Target is not set")
-            return "Target is not set"
+            logging.error("⚙️ Configuration Error: Target is not set in the configuration.")
+            return "⚙️ Configuration Error: Target is not set. Please ensure the target is specified in your configuration."
 
+        bot = configs.get("bot")
+        if bot is None or bot == "":
+            logging.error("⚙️ Configuration Error: Bot is not set in the configuration.")
+            return "⚙️ Configuration Error: Bot is not set. Please ensure the bot is specified in your configuration."
+
+        platform = configs.get("platform")
+        if platform is None or platform == "":
+            logging.error("⚙️ Configuration Error: Platform is not set in the configuration.")
+            return "⚙️ Configuration Error: Platform is not set. Please ensure the platform is specified in your configuration."
+        
         interval = configs.get("interval", 1)  # Default to 1 second if not set
         platform = configs.get("platform", "twitter").lower()  # Default to twitter if not set
         
@@ -60,10 +70,10 @@ def start_script():
             # Choose platform-specific main function
             if platform == "telegram":
                 from tg import main as telegram_main
-                main_task = main_loop.create_task(telegram_main(target, interval))
+                main_task = main_loop.create_task(telegram_main(target, interval, user_id))
             else:  # default to Twitter
                 from main import main as twitter_main
-                main_task = main_loop.create_task(twitter_main(target, interval))
+                main_task = main_loop.create_task(twitter_main(target, interval, user_id))
                 
             try:
                 logging.info("Starting main task execution")

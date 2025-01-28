@@ -16,7 +16,7 @@ app = Flask(__name__)
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
-db = client['CA-Hunter']  
+db = client['CA-Hunter1']  
 config_collection = db['configs']
 
 # Telegram Bot Setup
@@ -26,14 +26,22 @@ bot = telebot.TeleBot(bot_token)
 # Add these global variables at the top with other imports
 telegram_connection = None
 ADMIN_USER_ID = os.getenv('ADMIN_USER_ID')  # Add this to your .env file
+selected_accounts_for_deletion = {}
 
 def markups():
-    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True,row_width=2)   
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)   
     start = telebot.types.KeyboardButton('⚡ Start hunting')   
     stop = telebot.types.KeyboardButton('🛑 Stop hunting')   
     workers = telebot.types.KeyboardButton('👥 Workers')
     config = telebot.types.KeyboardButton('⚙️ Config')
-    markup.add(start,stop,workers,config)
+    
+    # Get current credentials status
+    configs = config_collection.find_one({'type': 'telegram_creds'}) or {}
+    cred_status = f"🔑 {configs.get('api_id', 'No Creds')}"
+    creds_btn = telebot.types.KeyboardButton(cred_status)
+    
+    markup.add(start, stop, workers, config)
+    markup.row(creds_btn)  # Add credentials button as full-width row
     return markup
 
 @app.route('/')
@@ -53,7 +61,8 @@ def telegram_bot():
 @bot.message_handler(func=lambda message: True)
 def chat(message):
     global telegram_connection
-    
+    user_id = message.chat.id
+
     # Check if we're waiting for authentication
     if telegram_connection and telegram_connection.get_waiting_for():
         # if str(message.chat.id) != str(ADMIN_USER_ID):
@@ -67,43 +76,54 @@ def chat(message):
         # if str(message.chat.id) != str(ADMIN_USER_ID):
         #     bot.reply_to(message, "You are not authorized to start the bot.")
         #     return
-            
-        try:
+        try:   
+             
+            creds_doc = config_collection.find_one({'type': 'telegram_creds'})
+            if not creds_doc or not all(key in creds_doc for key in ['api_id', 'api_hash', 'phone_number']):
+                bot.reply_to(message, "❌ No Telegram credentials set! Please configure them first.")
+                return   
             if not telegram_connection:
                 bot.reply_to(message, "Initializing Telegram connection...")
                 telegram_connection = get_telegram_connection()
                 
                 def bot_auth_callback(msg):
+                    global telegram_connection
                     bot.send_message(message.chat.id, msg)
-                    # Only start the script on successful authentication
                     if msg == "Successfully authenticated with Telegram!":
-                        # response = start_script()
-                        # bot.send_message(ADMIN_USER_ID, f"{response}", reply_markup=markups())
-                        # Clear the callback after successful authentication
+                        response = start_script(user_id)
+                        bot.send_message(message.chat.id, f"{response}", reply_markup=markups())
                         telegram_connection.bot_auth_callback = lambda x: None
-                
+                    elif "authentication failed" in msg.lower():
+                        telegram_connection = None
+                        bot.send_message(message.chat.id, "Authentication failed. Please try starting again.", 
+                                       reply_markup=markups())
+
                 telegram_connection.bot_auth_callback = bot_auth_callback
                 telegram_connection.initialize()
                 
-                if telegram_connection.is_connected():
-                    response = start_script()
-                    bot.reply_to(message, f"{response}", reply_markup=markups())
+                # Add retry mechanism
+                if not telegram_connection.is_connected():
+                    bot.reply_to(message, "Connection failed. Please check credentials and try again.", 
+                               reply_markup=markups())
                 return
             
             if telegram_connection.is_connected():
                 bot.reply_to(message, "Telegram connection is ready!")
-                response = start_script()
+                response = start_script(user_id)
                 bot.reply_to(message, f"{response}", reply_markup=markups())
             else:
                 waiting_for = telegram_connection.get_waiting_for()
                 if waiting_for:
                     bot.reply_to(message, f"Please provide your {waiting_for}.", reply_markup=markups())
                 else:
+                    config_collection.delete_one({'type': 'telethon_session'})
                     bot.reply_to(message, "Connection failed. Please try again.", reply_markup=markups())
                 
-        except Exception as e:
-            bot.reply_to(message, f"Error initializing Telegram: {str(e)}", reply_markup=markups())
-            return
+        except ValueError as e:
+            if "Missing Telegram credentials" in str(e):
+                bot.reply_to(message, "❌ Telegram credentials not configured! Use the 🔑 button to set them up.")
+            else:
+                bot.reply_to(message, f"Error: {str(e)}")
 
     elif message.text == "🛑 Stop hunting":
         response = stop_script()
@@ -146,15 +166,34 @@ def chat(message):
 
         configs = get_configs()
         config_message = "\n".join([f"{key}: {value}" for key, value in configs.items() if key not in ['interval', 'max_retries']])
-        
+        filtered_configs = {k: v for k, v in configs.items() 
+                          if k not in ['type', 'api_id', 'api_hash', 'phone_number'] 
+                          and not k.startswith('_')}
+        config_message = "\n".join([f"{key}: {value}" for key, value in filtered_configs.items()])
         bot.reply_to(message, f"Current configurations\n\n{config_message}")
         bot.reply_to(message, "Choose what you want to configure:", reply_markup=markup)
+
+    elif message.text.startswith('🔑'):
+        markup = telebot.types.InlineKeyboardMarkup()
+        creds_btn = telebot.types.InlineKeyboardButton('Manage Credentials', callback_data='set_telegram_creds')
+        markup.row(creds_btn)
+        
+        # Get current credentials
+        configs = config_collection.find_one({'type': 'telegram_creds'}) or {}
+        status_message = "Current Telegram Credentials:\n\n"
+        status_message += f"API_ID: {configs.get('api_id', 'Not set')}\n"
+        status_message += f"API_HASH: {configs.get('api_hash', 'Not set')[:4]}...\n"
+        status_message += f"PHONE: {configs.get('phone_number', 'Not set')}"
+        
+        bot.reply_to(message, status_message, reply_markup=markup)
 
     else:
         bot.reply_to(message, "I don't understand you 😢",reply_markup=markups())
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    global selected_accounts_for_deletion
+    
     if call.data == "set_target":
         msg = bot.send_message(call.message.chat.id, 
                              "Please enter the username to target (without @ symbol):", 
@@ -253,6 +292,9 @@ def callback_query(call):
         bot.register_next_step_handler(msg, process_file_upload)
 
     elif call.data == "delete_worker":
+        # Clear previous selections when opening delete menu
+        selected_accounts_for_deletion[call.message.chat.id] = []
+        
         credentials_collection = db['credentials']
         doc = credentials_collection.find_one({})
         
@@ -274,7 +316,7 @@ def callback_query(call):
         for account in online_accounts:
             btn = telebot.types.InlineKeyboardButton(
                 f"@{account['username']} - ✅", 
-                callback_data=f"del_{account['username']}_good"
+                callback_data=f"select_{account['username']}_good"
             )
             markup.row(btn)
         
@@ -282,40 +324,126 @@ def callback_query(call):
         for account in offline_accounts:
             btn = telebot.types.InlineKeyboardButton(
                 f"@{account['username']} - ❌", 
-                callback_data=f"del_{account['username']}_bad"
+                callback_data=f"select_{account['username']}_bad"
             )
             markup.row(btn)
+
+        # Add confirm delete button
+        confirm_btn = telebot.types.InlineKeyboardButton(
+            "🗑️ Delete Selected", 
+            callback_data="confirm_delete"
+        )
+        markup.row(confirm_btn)
         
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            text="Select account to delete:",
+            text="Select accounts to delete (click multiple):",
+            reply_markup=markup
+        )
+
+    elif call.data.startswith('select_'):
+        # Split the callback data to get username and status
+        _, username, status = call.data.split('_')
+        
+        # Initialize selected accounts for this chat if not exists
+        if call.message.chat.id not in selected_accounts_for_deletion:
+            selected_accounts_for_deletion[call.message.chat.id] = []
+        
+        # Toggle selection
+        account_info = {'username': username, 'status': status}
+        current_selections = selected_accounts_for_deletion[call.message.chat.id]
+        
+        if any(acc['username'] == username for acc in current_selections):
+            selected_accounts_for_deletion[call.message.chat.id] = [
+                acc for acc in current_selections if acc['username'] != username
+            ]
+        else:
+            selected_accounts_for_deletion[call.message.chat.id].append(account_info)
+        
+        # Update message to show selected accounts
+        current_selections = selected_accounts_for_deletion[call.message.chat.id]
+        if current_selections:
+            selected_text = "Selected accounts:\n"
+            for acc in current_selections:
+                status_emoji = "✅" if acc['status'] == 'good' else "❌"
+                selected_text += f"@{acc['username']} {status_emoji}\n"
+        else:
+            selected_text = "Select accounts to delete (click multiple):"
+        
+        # Keep the same markup as before
+        markup = call.message.reply_markup
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=selected_text,
             reply_markup=markup
         )
         
-    elif call.data.startswith('del_'):
-        # Split the callback data to get username and status
-        _, username, status = call.data.split('_')
+    elif call.data == "confirm_delete":
+        current_selections = selected_accounts_for_deletion.get(call.message.chat.id, [])
+        if not current_selections:
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="No accounts selected for deletion.",
+            )
+            return
+            
         credentials_collection = db['credentials']
         
-        # Remove from the appropriate array based on status
-        if status == 'good':
-            credentials_collection.update_one(
-                {},
-                {'$pull': {'accounts': {'username': username}}}
-            )
-        else:  # status == 'bad'
-            credentials_collection.update_one(
-                {},
-                {'$pull': {'offline': {'username': username}}}
-            )
+        # Delete selected accounts
+        for account in current_selections:
+            if account['status'] == 'good':
+                credentials_collection.update_one(
+                    {},
+                    {'$pull': {'accounts': {'username': account['username']}}}
+                )
+            else:  # status == 'bad'
+                credentials_collection.update_one(
+                    {},
+                    {'$pull': {'offline': {'username': account['username']}}}
+                )
+        
+        deleted_accounts = ", ".join([f"@{acc['username']}" for acc in current_selections])
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text=f"Deleted accounts: {deleted_accounts}",
+        )
+        
+        # Clear selections after deletion
+        selected_accounts_for_deletion[call.message.chat.id] = []
+        
+        bot.send_message(call.message.chat.id, "Worker accounts deleted successfully!", reply_markup=markups())
+
+    elif call.data in ['create_creds', 'change_creds']:
+        msg = bot.send_message(
+            call.message.chat.id,
+            "Please enter your API_ID:",
+            reply_markup=telebot.types.ForceReply()
+        )
+        bot.register_next_step_handler(msg, process_api_id_step)
         
         bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
-            text=f"Account @{username} has been deleted.",
+            text="Starting credential setup...",
+            reply_markup=None
         )
-        bot.send_message(call.message.chat.id, "Worker account deleted successfully!", reply_markup=markups())
+
+    elif call.data == "set_telegram_creds":
+        markup = telebot.types.InlineKeyboardMarkup()
+        create_btn = telebot.types.InlineKeyboardButton('➕ Create New', callback_data='create_creds')
+        change_btn = telebot.types.InlineKeyboardButton('✏️ Change Existing', callback_data='change_creds')
+        markup.row(create_btn, change_btn)
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="Manage Telegram Credentials:",
+            reply_markup=markup
+        )
 
 def process_target_step(message):
     try:
@@ -442,7 +570,56 @@ def handle_auth_request(chat_id, message):
             telegram_connection.set_auth_data('password', message.text.strip())
             bot.reply_to(message, "2FA password received, processing...")
 
+def process_api_id_step(message):
+    try:
+        api_id = int(message.text.strip())
+        msg = bot.send_message(message.chat.id, 
+                             "Please enter your API_HASH:",
+                             reply_markup=telebot.types.ForceReply())
+        bot.register_next_step_handler(msg, process_api_hash_step, api_id)
+    except ValueError:
+        bot.send_message(message.chat.id, "Invalid API_ID! Must be a number.")
+
+def process_api_hash_step(message, api_id):
+    api_hash = message.text.strip()
+    msg = bot.send_message(message.chat.id, 
+                         "Please enter your PHONE_NUMBER (international format):",
+                         reply_markup=telebot.types.ForceReply())
+    bot.register_next_step_handler(msg, process_phone_step, api_id, api_hash)
+
+def process_phone_step(message, api_id, api_hash):
+    phone_number = message.text.strip()
+    
+    # Clear existing session when credentials change
+    config_collection.delete_one({'type': 'telethon_session'})
+    
+    # Save to MongoDB
+    config_collection.update_one(
+        {'type': 'telegram_creds'},
+        {'$set': {
+            'api_id': api_id,
+            'api_hash': api_hash,
+            'phone_number': phone_number
+        }},
+        upsert=True
+    )
+    
+   # Force disconnect existing connection
+    global telegram_connection
+    if telegram_connection:
+        try:
+            print("Disconnecting existing Telegram connection...")
+            telegram_connection.disconnect()  # Use the proper disconnect method
+            print("Successfully disconnected old connection")
+        except Exception as e:
+            print(f"Error disconnecting: {str(e)}")
+        finally:
+            telegram_connection = None  # Reset the connection instance
+    
+    bot.send_message(message.chat.id, "✅ Telegram credentials saved successfully!", reply_markup=markups())
+
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=True)
+
 
 
