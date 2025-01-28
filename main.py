@@ -16,7 +16,7 @@ load_dotenv()
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 mongo_client = MongoClient(MONGO_URL)
-db = mongo_client['CA-Hunter']  # Replace with your database name
+db = mongo_client['CA-Hunter1']  # Replace with your database name
 credentials_collection = db['credentials']
 config_collection = db['configs']
 
@@ -180,7 +180,7 @@ async def main(TARGET, CHECK_INTERVAL,user_id):
     
     logging.info(f"Calculated interval: {check_interval:.2f} seconds with {num_clients} clients")
     #bot.send_message(533017326, f"Running with interval: {check_interval:.2f} seconds using {num_clients} clients")
-
+    bot.send_message(ADMIN_USER_ID, f"Estimated delay {check_interval:.2f} seconds.")
     index = 0
     logging.info(f"Requesting user info for target: {TARGET}")
     try:
@@ -230,12 +230,13 @@ async def main(TARGET, CHECK_INTERVAL,user_id):
             latest_tweet = await get_latest_tweet(user, clients[index])
         except RateLimitError:
             logging.warning(f"Rate limit hit for client {index}, removing client")
-            bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed. Recalculating interval...")
+            bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed.")
             clients.pop(index)
             if not clients:
                 bot.send_message(ADMIN_USER_ID, "❌ No clients remaining. Stopping script.")
                 return
             check_interval = recalculate_interval(len(clients))
+            bot.send_message(ADMIN_USER_ID, f"Estimated delay {check_interval:.2f} seconds.")
             index = index % len(clients)
             continue
         except MaxRetriesExceededError:

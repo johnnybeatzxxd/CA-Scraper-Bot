@@ -16,7 +16,7 @@ app = Flask(__name__)
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
-db = client['CA-Hunter']  
+db = client['CA-Hunter1']  
 config_collection = db['configs']
 
 # Telegram Bot Setup
@@ -62,7 +62,7 @@ def telegram_bot():
 def chat(message):
     global telegram_connection
     user_id = message.chat.id
-    
+
     # Check if we're waiting for authentication
     if telegram_connection and telegram_connection.get_waiting_for():
         # if str(message.chat.id) != str(ADMIN_USER_ID):
@@ -76,12 +76,12 @@ def chat(message):
         # if str(message.chat.id) != str(ADMIN_USER_ID):
         #     bot.reply_to(message, "You are not authorized to start the bot.")
         #     return
-            
-        try:
-            if not all(config_collection.find_one({'type': 'telegram_creds'})):
+        try:   
+             
+            creds_doc = config_collection.find_one({'type': 'telegram_creds'})
+            if not creds_doc or not all(key in creds_doc for key in ['api_id', 'api_hash', 'phone_number']):
                 bot.reply_to(message, "❌ No Telegram credentials set! Please configure them first.")
-                return
-                
+                return   
             if not telegram_connection:
                 bot.reply_to(message, "Initializing Telegram connection...")
                 telegram_connection = get_telegram_connection()
@@ -116,6 +116,7 @@ def chat(message):
                 if waiting_for:
                     bot.reply_to(message, f"Please provide your {waiting_for}.", reply_markup=markups())
                 else:
+                    config_collection.delete_one({'type': 'telethon_session'})
                     bot.reply_to(message, "Connection failed. Please try again.", reply_markup=markups())
                 
         except ValueError as e:
@@ -165,7 +166,10 @@ def chat(message):
 
         configs = get_configs()
         config_message = "\n".join([f"{key}: {value}" for key, value in configs.items() if key not in ['interval', 'max_retries']])
-        
+        filtered_configs = {k: v for k, v in configs.items() 
+                          if k not in ['type', 'api_id', 'api_hash', 'phone_number'] 
+                          and not k.startswith('_')}
+        config_message = "\n".join([f"{key}: {value}" for key, value in filtered_configs.items()])
         bot.reply_to(message, f"Current configurations\n\n{config_message}")
         bot.reply_to(message, "Choose what you want to configure:", reply_markup=markup)
 
