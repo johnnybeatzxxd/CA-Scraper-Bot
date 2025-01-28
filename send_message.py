@@ -29,6 +29,7 @@ class TelegramConnection:
 
     def __init__(self):
         if not hasattr(self, 'initialized'):
+            print("Initializing TelegramConnection - fresh instance")
             self.client = None
             self.loop = None
             self.thread = None
@@ -42,45 +43,48 @@ class TelegramConnection:
             self.phone_number = self.creds.get('phone_number')
             self._current_cred_hash = None
             self._refresh_credentials()
+            print(f"Initial credentials hash: {self._current_cred_hash}")
 
     def _refresh_credentials(self):
         """Reload credentials from DB and check for changes"""
         new_creds = config_collection.find_one({'type': 'telegram_creds'}) or {}
-        new_hash = hash(frozenset(new_creds.items()))
         
-        if new_hash != self._current_cred_hash:
-            print("Credentials changed - resetting connection")
-            # Clear existing session when credentials change
+        # Compare individual fields instead of using hash
+        if (new_creds.get('api_id') != self.api_id or
+            new_creds.get('api_hash') != self.api_hash or
+            new_creds.get('phone_number') != self.phone_number):
+            
+            print("Credentials changed - clearing session")
             config_collection.delete_one({'type': 'telethon_session'})
             self.client = None
             self.initialized = False
-            self._current_cred_hash = new_hash
-            self.creds = new_creds
-            self.api_id = new_creds.get('api_id')
-            self.api_hash = new_creds.get('api_hash')
-            self.phone_number = new_creds.get('phone_number')
+        
+        # Update instance credentials
+        self.api_id = new_creds.get('api_id')
+        self.api_hash = new_creds.get('api_hash')
+        self.phone_number = new_creds.get('phone_number')
 
     def _get_session(self):
         """Get session string from MongoDB"""
         try:
             config = config_collection.find_one({'type': 'telethon_session'})
-            if config and 'session_string' in config:
-                return config['session_string']
+            return config.get('session_string') if config else None
         except Exception as e:
             print(f"Error getting session: {e}")
-        return None
+            return None
 
     def _save_session(self, session_string):
         """Save session string to MongoDB"""
         try:
+            print(f"Saving new session string: {session_string[:15]}...")
             config_collection.update_one(
                 {'type': 'telethon_session'},
                 {'$set': {'session_string': session_string}},
                 upsert=True
             )
-            print("Session saved successfully!")
         except Exception as e:
-            print(f"Error saving session: {e}")
+            print(f"Error saving session: {str(e)}")
+            raise
 
     def initialize(self):
         """Explicitly initialize the client when needed"""
@@ -137,6 +141,7 @@ class TelegramConnection:
             await self.client.connect()
             
             if not await self.client.is_user_authorized():
+                print("User not authorized - beginning authentication flow")
                 self.initialized = False
                 self._connection_event.clear()
                 
@@ -164,9 +169,15 @@ class TelegramConnection:
                         self._connection_event.clear()
                         raise
                 
-                # Save session after successful authentication
+                print("Auth successful - generating session string")
                 session_string = self.client.session.save()
+                print(f"Session string generated: {session_string[:15]}...")  # Log first 15 chars
                 self._save_session(session_string)
+            else:
+                print("User already authorized - checking session consistency")
+                session_string = self.client.session.save()
+                print(f"Existing session string: {session_string[:15]}...")
+                self._save_session(session_string)  # Ensure we save even if already authorized
             
             print("Client started and authenticated successfully!")
             if self.bot_auth_callback:
@@ -214,17 +225,21 @@ class TelegramConnection:
             # Try to get existing session
             session_string = self._get_session()
             if session_string:
+                print("Creating client with existing session in worker thread")
                 self.client = TelegramClient(
                     StringSession(session_string),
                     self.api_id,
                     self.api_hash,
+                    loop=self.loop,  # Explicitly set the event loop
                     sequential_updates=True
                 )
             else:
+                print("Creating new client in worker thread")
                 self.client = TelegramClient(
                     StringSession(),
                     self.api_id,
                     self.api_hash,
+                    loop=self.loop,  # Explicitly set the event loop
                     sequential_updates=True
                 )
 
@@ -244,6 +259,8 @@ class TelegramConnection:
     def _setup_client(self):
         if not self.initialized:
             try:
+                session_string = self._get_session()
+                
                 # Reset any existing client and thread
                 if self.client:
                     if self.loop and self.loop.is_running():
@@ -252,6 +269,7 @@ class TelegramConnection:
                 if self.thread and self.thread.is_alive():
                     self.thread = None
                 
+                # Create new thread and client together
                 self.thread = threading.Thread(target=self._run_client, daemon=True)
                 self.thread.start()
                 
@@ -261,6 +279,7 @@ class TelegramConnection:
                     self.initialized = False
                     self._connection_event.clear()
                     raise RuntimeError("Timeout waiting for Telegram client initialization")
+
             except Exception as e:
                 print(f"Error in setup_client: {e}")
                 self.initialized = False
@@ -350,5 +369,6 @@ def send_message_to_bot(your_message: str = "Hello ") -> None:
 
 if __name__ == "__main__":
     print("This module should be imported, not run directly.")
+
 
 

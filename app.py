@@ -61,6 +61,7 @@ def telegram_bot():
 @bot.message_handler(func=lambda message: True)
 def chat(message):
     global telegram_connection
+    user_id = message.chat.id
     
     # Check if we're waiting for authentication
     if telegram_connection and telegram_connection.get_waiting_for():
@@ -89,7 +90,7 @@ def chat(message):
                     global telegram_connection
                     bot.send_message(message.chat.id, msg)
                     if msg == "Successfully authenticated with Telegram!":
-                        response = start_script()
+                        response = start_script(user_id)
                         bot.send_message(message.chat.id, f"{response}", reply_markup=markups())
                         telegram_connection.bot_auth_callback = lambda x: None
                     elif "authentication failed" in msg.lower():
@@ -108,7 +109,7 @@ def chat(message):
             
             if telegram_connection.is_connected():
                 bot.reply_to(message, "Telegram connection is ready!")
-                response = start_script()
+                response = start_script(user_id)
                 bot.reply_to(message, f"{response}", reply_markup=markups())
             else:
                 waiting_for = telegram_connection.get_waiting_for()

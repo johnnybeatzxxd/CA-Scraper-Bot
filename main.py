@@ -152,8 +152,9 @@ def recalculate_interval(num_clients):
     safe_interval = (RATE_LIMIT_WINDOW / total_requests_per_window) * 1.2
     return safe_interval
 
-async def main(TARGET, CHECK_INTERVAL):
+async def main(TARGET, CHECK_INTERVAL,user_id):
     global running
+    ADMIN_USER_ID = user_id
     running = True
     bot.send_message(ADMIN_USER_ID,f"Initializing clients...")
     clients = await initialize_clients()
