@@ -29,12 +29,19 @@ ADMIN_USER_ID = os.getenv('ADMIN_USER_ID')  # Add this to your .env file
 selected_accounts_for_deletion = {}
 
 def markups():
-    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True,row_width=2)   
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)   
     start = telebot.types.KeyboardButton('⚡ Start hunting')   
     stop = telebot.types.KeyboardButton('🛑 Stop hunting')   
     workers = telebot.types.KeyboardButton('👥 Workers')
     config = telebot.types.KeyboardButton('⚙️ Config')
-    markup.add(start,stop,workers,config)
+    
+    # Get current credentials status
+    configs = config_collection.find_one({'type': 'telegram_creds'}) or {}
+    cred_status = f"🔑 {configs.get('api_id', 'No Creds')}"
+    creds_btn = telebot.types.KeyboardButton(cred_status)
+    
+    markup.add(start, stop, workers, config)
+    markup.row(creds_btn)  # Add credentials button as full-width row
     return markup
 
 @app.route('/')
@@ -150,6 +157,20 @@ def chat(message):
         
         bot.reply_to(message, f"Current configurations\n\n{config_message}")
         bot.reply_to(message, "Choose what you want to configure:", reply_markup=markup)
+
+    elif message.text.startswith('🔑'):
+        markup = telebot.types.InlineKeyboardMarkup()
+        creds_btn = telebot.types.InlineKeyboardButton('Manage Credentials', callback_data='set_telegram_creds')
+        markup.row(creds_btn)
+        
+        # Get current credentials
+        configs = config_collection.find_one({'type': 'telegram_creds'}) or {}
+        status_message = "Current Telegram Credentials:\n\n"
+        status_message += f"API_ID: {configs.get('api_id', 'Not set')}\n"
+        status_message += f"API_HASH: {configs.get('api_hash', 'Not set')[:4]}...\n"
+        status_message += f"PHONE: {configs.get('phone_number', 'Not set')}"
+        
+        bot.reply_to(message, status_message, reply_markup=markup)
 
     else:
         bot.reply_to(message, "I don't understand you 😢",reply_markup=markups())
@@ -381,6 +402,34 @@ def callback_query(call):
         
         bot.send_message(call.message.chat.id, "Worker accounts deleted successfully!", reply_markup=markups())
 
+    elif call.data in ['create_creds', 'change_creds']:
+        msg = bot.send_message(
+            call.message.chat.id,
+            "Please enter your API_ID:",
+            reply_markup=telebot.types.ForceReply()
+        )
+        bot.register_next_step_handler(msg, process_api_id_step)
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="Starting credential setup...",
+            reply_markup=None
+        )
+
+    elif call.data == "set_telegram_creds":
+        markup = telebot.types.InlineKeyboardMarkup()
+        create_btn = telebot.types.InlineKeyboardButton('➕ Create New', callback_data='create_creds')
+        change_btn = telebot.types.InlineKeyboardButton('✏️ Change Existing', callback_data='change_creds')
+        markup.row(create_btn, change_btn)
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="Manage Telegram Credentials:",
+            reply_markup=markup
+        )
+
 def process_target_step(message):
     try:
         target = message.text.strip()  
@@ -505,6 +554,39 @@ def handle_auth_request(chat_id, message):
         elif waiting_for == 'password':
             telegram_connection.set_auth_data('password', message.text.strip())
             bot.reply_to(message, "2FA password received, processing...")
+
+def process_api_id_step(message):
+    try:
+        api_id = int(message.text.strip())
+        msg = bot.send_message(message.chat.id, 
+                             "Please enter your API_HASH:",
+                             reply_markup=telebot.types.ForceReply())
+        bot.register_next_step_handler(msg, process_api_hash_step, api_id)
+    except ValueError:
+        bot.send_message(message.chat.id, "Invalid API_ID! Must be a number.")
+
+def process_api_hash_step(message, api_id):
+    api_hash = message.text.strip()
+    msg = bot.send_message(message.chat.id, 
+                         "Please enter your PHONE_NUMBER (international format):",
+                         reply_markup=telebot.types.ForceReply())
+    bot.register_next_step_handler(msg, process_phone_step, api_id, api_hash)
+
+def process_phone_step(message, api_id, api_hash):
+    phone_number = message.text.strip()
+    
+    # Save to MongoDB
+    config_collection.update_one(
+        {'type': 'telegram_creds'},
+        {'$set': {
+            'api_id': api_id,
+            'api_hash': api_hash,
+            'phone_number': phone_number
+        }},
+        upsert=True
+    )
+    
+    bot.send_message(message.chat.id, "✅ Telegram credentials saved successfully!", reply_markup=markups())
 
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=True)
