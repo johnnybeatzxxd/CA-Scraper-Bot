@@ -16,7 +16,7 @@ app = Flask(__name__)
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
-db = client['CA-Hunter1']  
+db = client['CA-Hunter']  
 config_collection = db['configs']
 
 # Telegram Bot Setup

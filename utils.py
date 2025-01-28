@@ -13,7 +13,7 @@ from pymongo import MongoClient
 load_dotenv()
 MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
-db = client['CA-Hunter1'] 
+db = client['CA-Hunter'] 
 config_collection = db['configs']  
 
 main_loop = None
