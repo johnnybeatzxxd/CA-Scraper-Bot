@@ -16,7 +16,7 @@ app = Flask(__name__)
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
-db = client['CA-Hunter1']  
+db = client['CA-Hunter']  
 config_collection = db['configs']
 
 # Telegram Bot Setup
@@ -165,12 +165,11 @@ def chat(message):
         markup.row(platform_btn)
 
         configs = get_configs()
-        config_message = "\n".join([f"{key}: {value}" for key, value in configs.items() if key not in ['interval', 'max_retries']])
         filtered_configs = {k: v for k, v in configs.items() 
-                          if k not in ['type', 'api_id', 'api_hash', 'phone_number'] 
+                          if k not in ['type', 'api_id', 'api_hash', 'phone_number','interval','max_retries'] 
                           and not k.startswith('_')}
-        config_message = "\n".join([f"{key}: {value}" for key, value in filtered_configs.items()])
-        bot.reply_to(message, f"Current configurations\n\n{config_message}")
+        config_message = "\n".join([f"{key}: {value}" for key, value in reversed(filtered_configs.items())])
+        bot.reply_to(message, f"Current configurations:\n\n{config_message}")
         bot.reply_to(message, "Choose what you want to configure:", reply_markup=markup)
 
     elif message.text.startswith('🔑'):
