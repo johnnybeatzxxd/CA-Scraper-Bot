@@ -18,6 +18,7 @@ MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
 db = client['CA-Hunter1']  
 config_collection = db['configs']
+users = db["users"]
 
 # Telegram Bot Setup
 bot_token = os.environ.get("TelegramBotToken")
@@ -25,7 +26,8 @@ bot = telebot.TeleBot(bot_token)
 
 # Add these global variables at the top with other imports
 telegram_connection = None
-ADMIN_USER_ID = os.getenv('ADMIN_USER_ID')  # Add this to your .env file
+OWNER_IDS = [int(id) for id in os.getenv('ADMIN_USER_IDS', '').split(',') if id]
+owners = OWNER_IDS
 selected_accounts_for_deletion = {}
 
 def markups():
@@ -58,24 +60,91 @@ def telegram_bot():
         print(f"Error processing Telegram update: {e}")
         return "Error", 500
 
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    welcome_msg = f"👋 Welcome {message.from_user.first_name}!\n\n"
+    welcome_msg += "I'm your Crypto Hunter Bot 🚀\n\n"
+    welcome_msg += "Key Features:\n"
+    welcome_msg += "- 🎯 Hunting newly launched Twitter/Telegram accounts\n"
+    welcome_msg += "- ⚡ Sniping tokens at lightning speed\n" 
+    welcome_msg += "- 💸 Auto-buying tokens immediately after launch\n"
+    welcome_msg += "- 🔒 Secure and reliable execution\n\n"
+    welcome_msg += "⚠️ Access Required:\n"
+    welcome_msg += "This is a private bot - please contact @fiinnessey to request access.\n\n"
+    welcome_msg += "Once authorized, you can start hunting using the buttons below! 🎯"
+    bot.reply_to(message, welcome_msg, parse_mode='Markdown', reply_markup=markups())
+@bot.message_handler(func=lambda message: message.text.startswith('/allow') and message.chat.id in owners)
+def handle_allow(message):
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            bot.reply_to(message, "Usage: /allow <user_id1> <user_id2> ...")
+            return
+            
+        user_ids = [int(id) for id in parts[1:]]
+        
+        users.update_one(
+            {},
+            {"$addToSet": {"allowed_users": {"$each": user_ids}}},
+            upsert=True
+        )
+        
+        allowed = users.find_one().get("allowed_users", [])
+        bot.reply_to(message, f"✅ Allowed users updated!\nCurrent allowed IDs: {', '.join(map(str, allowed))}")
+        
+    except ValueError:
+        bot.reply_to(message, "Invalid user ID format. Must be integers.")
+    except Exception as e:
+        bot.reply_to(message, f"Error updating allowed users: {str(e)}")
+
+@bot.message_handler(func=lambda message: message.text.startswith('/block') and message.chat.id in owners)
+def handle_block(message):
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            bot.reply_to(message, "Usage: /block <user_id1> <user_id2> ...")
+            return
+            
+        user_ids = [int(id) for id in parts[1:]]
+        
+        users.update_one(
+            {},
+            {"$pull": {"allowed_users": {"$in": user_ids}}}
+        )
+        
+        allowed = users.find_one().get("allowed_users", [])
+        bot.reply_to(message, f"✅ Users blocked!\nRemaining allowed IDs: {', '.join(map(str, allowed))}")
+        
+    except ValueError:
+        bot.reply_to(message, "Invalid user ID format. Must be integers.")
+    except Exception as e:
+        bot.reply_to(message, f"Error blocking users: {str(e)}")
+
+
 @bot.message_handler(func=lambda message: True)
 def chat(message):
     global telegram_connection
     user_id = message.chat.id
-
+   
     # Check if we're waiting for authentication
     if telegram_connection and telegram_connection.get_waiting_for():
-        # if str(message.chat.id) != str(ADMIN_USER_ID):
-        #     bot.reply_to(message, "You are not authorized to perform this action.")
-        #     return
-            
+        if message.chat.id not in owners:
+            user_doc = users.find_one({})
+            allowed_users = user_doc.get('allowed_users', []) if user_doc else []
+            if message.chat.id not in allowed_users:
+                return
         handle_auth_request(message.chat.id, message)
         return
 
     if message.text == "⚡ Start hunting":
-        # if str(message.chat.id) != str(ADMIN_USER_ID):
-        #     bot.reply_to(message, "You are not authorized to start the bot.")
-        #     return
+      
+        if message.chat.id not in owners:
+            user_doc = users.find_one({})
+            allowed_users = user_doc.get('allowed_users', []) if user_doc else []
+            if message.chat.id not in allowed_users:
+                bot.reply_to(message, "❌ You are not authorized to start the bot.")
+                return
+
         try:   
              
             creds_doc = config_collection.find_one({'type': 'telegram_creds'})
@@ -126,10 +195,23 @@ def chat(message):
                 bot.reply_to(message, f"Error: {str(e)}")
 
     elif message.text == "🛑 Stop hunting":
+        print("hellow world")
+        if message.chat.id not in owners:
+            user_doc = users.find_one({})
+            allowed_users = user_doc.get('allowed_users', []) if user_doc else []
+            if message.chat.id not in allowed_users:
+                bot.reply_to(message, "❌ You are not authorized to stop the bot.")
+                return
         response = stop_script()
         bot.reply_to(message, f"{response}",reply_markup=markups())
 
     elif message.text == "👥 Workers":
+        if message.chat.id not in owners:
+            user_doc = users.find_one({})
+            allowed_users = user_doc.get('allowed_users', []) if user_doc else []
+            if message.chat.id not in allowed_users:
+                bot.reply_to(message, "❌ You are not authorized to see workers.")
+                return
         credentials_collection = db['credentials']
         doc = credentials_collection.find_one({})
         
@@ -156,6 +238,12 @@ def chat(message):
         bot.reply_to(message, status_message, reply_markup=markup)
 
     elif message.text == "⚙️ Config":
+        if message.chat.id not in owners:
+            user_doc = users.find_one({})
+            allowed_users = user_doc.get('allowed_users', []) if user_doc else []
+            if message.chat.id not in allowed_users:
+                bot.reply_to(message, "❌ You are not authorized to configure the bot.")
+                return
         markup = telebot.types.InlineKeyboardMarkup()
         target_btn = telebot.types.InlineKeyboardButton('🎯 Set Target', callback_data='set_target')
         bot_btn = telebot.types.InlineKeyboardButton('🤖 Set Bot', callback_data='set_bot')
@@ -173,6 +261,12 @@ def chat(message):
         bot.reply_to(message, "Choose what you want to configure:", reply_markup=markup)
 
     elif message.text.startswith('🔑'):
+        if message.chat.id not in owners:
+            user_doc = users.find_one({})
+            allowed_users = user_doc.get('allowed_users', []) if user_doc else []
+            if message.chat.id not in allowed_users:
+                bot.reply_to(message, "❌ You are not authorized to configure the bot.")
+                return
         markup = telebot.types.InlineKeyboardMarkup()
         creds_btn = telebot.types.InlineKeyboardButton('Manage Credentials', callback_data='set_telegram_creds')
         markup.row(creds_btn)
@@ -617,8 +711,12 @@ def process_phone_step(message, api_id, api_hash):
     
     bot.send_message(message.chat.id, "✅ Telegram credentials saved successfully!", reply_markup=markups())
 
+
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=True)
+
+
+
 
 
 
