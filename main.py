@@ -37,7 +37,8 @@ logging.basicConfig(
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-async def callback(tweet: Tweet) -> None:
+async def callback(tweet: Tweet,user_id) -> None:
+    ADMIN_USER_ID = user_id
     logging.info(f"New tweet posted: {tweet.text}")
     logging.info(f"New tweet posted: {tweet.text}")
     logging.info(f"tweet created at: {tweet.created_at}")
@@ -82,7 +83,8 @@ async def get_latest_tweet(user, client) -> list:
         bot.send_message(ADMIN_USER_ID,f"Error while fetching latest tweets for user {user.name}: {e}")
         raise MaxRetriesExceededError(f"Max retries exceeded for client {client}")
 
-async def initialize_clients():
+async def initialize_clients(user_id):
+    ADMIN_USER_ID = user_id
     clients = []
     all_accounts = []
     failed_accounts = []
@@ -154,10 +156,11 @@ def recalculate_interval(num_clients):
 
 async def main(TARGET, CHECK_INTERVAL,user_id):
     global running
+    global ADMIN_USER_ID
     ADMIN_USER_ID = user_id
     running = True
     bot.send_message(ADMIN_USER_ID,f"Initializing clients...")
-    clients = await initialize_clients()
+    clients = await initialize_clients(user_id)
     num_clients = len(clients)
 
     if num_clients == 0:
@@ -254,7 +257,7 @@ async def main(TARGET, CHECK_INTERVAL,user_id):
                 logging.info(f"Fetching full tweet details using client index: {index}")
                 try:
                     tweet = await clients[index].get_tweet_by_id(item.id)
-                    await callback(tweet)
+                    await callback(tweet,user_id)
                 except Exception as e:
                     logging.error(f"Error fetching tweet details: {e}")
                     continue
