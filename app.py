@@ -276,7 +276,7 @@ def chat(message):
         status_message = "Current Telegram Credentials:\n\n"
         status_message += f"API_ID: {configs.get('api_id', 'Not set')}\n"
         status_message += f"API_HASH: {configs.get('api_hash', 'Not set')[:4]}...\n"
-        status_message += f"PHONE: {configs.get('phone_number', 'Not set')}"
+        status_message += f"PHONE: {configs.get('phone_number', 'Not set')[:6]}..."
         
         bot.reply_to(message, status_message, reply_markup=markup)
 
