@@ -73,7 +73,7 @@ class RateLimitError(Exception):
     """Custom exception for handling rate limits."""
     pass
 
-async def get_latest_tweet(user, client) -> list:
+async def get_latest_tweet(user, client,ADMIN_USER_ID) -> list:
     try:
         return await client.get_user_tweets(user.id, "Tweets")
     except Exception as e:
@@ -201,7 +201,7 @@ async def main(TARGET, CHECK_INTERVAL,user_id):
         if not before_tweet:
             try:
                 logging.info(f"Fetching initial tweets using client index {index}.")
-                before_tweet = await get_latest_tweet(user, clients[index])
+                before_tweet = await get_latest_tweet(user, clients[index],ADMIN_USER_ID)
             except RateLimitError:
                 logging.warning(f"Rate limit hit for client {index}, removing client")
                 bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed. Recalculating interval...")
@@ -230,7 +230,7 @@ async def main(TARGET, CHECK_INTERVAL,user_id):
 
         logging.info(f"Fetching latest tweets using client index: {index}")
         try:
-            latest_tweet = await get_latest_tweet(user, clients[index])
+            latest_tweet = await get_latest_tweet(user, clients[index],ADMIN_USER_ID)
         except RateLimitError:
             logging.warning(f"Rate limit hit for client {index}, removing client")
             bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed.")
