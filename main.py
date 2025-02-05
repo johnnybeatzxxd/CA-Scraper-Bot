@@ -16,7 +16,7 @@ load_dotenv()
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 mongo_client = MongoClient(MONGO_URL)
-db = mongo_client['CA-Hunter1']  # Replace with your database name
+db = mongo_client['CA-Hunter']  # Replace with your database name
 credentials_collection = db['credentials']
 config_collection = db['configs']
 
