@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 MONGO_URL = os.getenv('MONGO_URL')
 mongo_client = MongoClient(MONGO_URL)
-db = mongo_client['CA-Hunter']
+db_name = os.getenv('DATABASE_NAME')
+db = mongo_client[db_name]  
 config_collection = db['configs']
 
 

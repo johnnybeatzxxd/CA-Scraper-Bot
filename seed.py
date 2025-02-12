@@ -8,7 +8,8 @@ load_dotenv()
 def connect_to_mongodb():
     MONGO_URL = os.getenv('MONGO_URL')
     client = MongoClient(MONGO_URL)
-    db = client['CA-Hunter']
+    db_name = os.getenv('DATABASE_NAME')
+    db = client[db_name]  
     return db
 
 def migrate_configs():

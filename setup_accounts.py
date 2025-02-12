@@ -8,7 +8,8 @@ from pymongo.operations import UpdateOne
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
-db = client['CA-Hunter']
+db_name = os.getenv('DATABASE_NAME')
+db = client[db_name]  
 credentials_collection = db['credentials']
 cookies_collection = db["cookies"]
 
