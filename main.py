@@ -16,7 +16,8 @@ load_dotenv()
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 mongo_client = MongoClient(MONGO_URL)
-db = mongo_client['CA-Hunter1']  # Replace with your database name
+db_name = os.getenv('DATABASE_NAME')
+db = mongo_client[db_name]   # Replace with your database name
 credentials_collection = db['credentials']
 config_collection = db['configs']
 
@@ -58,12 +59,13 @@ async def callback(tweet: Tweet,user_id) -> None:
     result = get_contract(tweet)
 
     if result:
-        await send_message_to_bot(your_message=result[0])  # Now this await is valid
-        bot.send_message(ADMIN_USER_ID,f"New tweet posted: {tweet.text}")
-        bot.send_message(ADMIN_USER_ID,f"Contract Address Found: {result[0]}\n")
+        # await send_message_to_bot(your_message=result[0])  # Now this await is valid
+        bot.send_message(ADMIN_USER_ID,f"{result[0]}")
+        # bot.send_message(ADMIN_USER_ID,f"New tweet posted: {tweet.text}")
+        # bot.send_message(ADMIN_USER_ID,f"Contract Address Found: {result[0]}\n")
         return      
-    bot.send_message(ADMIN_USER_ID,f"New tweet posted: {tweet.text}")
-    bot.send_message(ADMIN_USER_ID,f"No CA Found!")
+    # bot.send_message(ADMIN_USER_ID,f"New tweet posted: {tweet.text}")
+    # bot.send_message(ADMIN_USER_ID,f"No CA Found!")
 
 class MaxRetriesExceededError(Exception):
     """Custom exception for handling max retries exceeded."""
@@ -80,7 +82,7 @@ async def get_latest_tweet(user, client,ADMIN_USER_ID) -> list:
         if "Rate limit exceeded" in str(e) or "code':88" in str(e):
             raise RateLimitError(f"Rate limit exceeded for client")
         logging.error(f"Error while fetching latest tweets for user {user.name}: {e}")
-        bot.send_message(ADMIN_USER_ID,f"Error while fetching latest tweets for user {user.name}: {e}")
+        # bot.send_message(ADMIN_USER_ID,f"Error while fetching latest tweets for user {user.name}: {e}")
         raise MaxRetriesExceededError(f"Max retries exceeded for client {client}")
 
 async def initialize_clients(user_id):
@@ -204,7 +206,7 @@ async def main(TARGET, CHECK_INTERVAL,user_id):
                 before_tweet = await get_latest_tweet(user, clients[index],ADMIN_USER_ID)
             except RateLimitError:
                 logging.warning(f"Rate limit hit for client {index}, removing client")
-                bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed. Recalculating interval...")
+                # bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed. Recalculating interval...")
                 clients.pop(index)
                 if not clients:
                     bot.send_message(ADMIN_USER_ID, "❌ No clients remaining. Stopping script.")
@@ -233,13 +235,13 @@ async def main(TARGET, CHECK_INTERVAL,user_id):
             latest_tweet = await get_latest_tweet(user, clients[index],ADMIN_USER_ID)
         except RateLimitError:
             logging.warning(f"Rate limit hit for client {index}, removing client")
-            bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed.")
+            # bot.send_message(ADMIN_USER_ID, f"⚠️ Client {index} rate limited and removed.")
             clients.pop(index)
             if not clients:
                 bot.send_message(ADMIN_USER_ID, "❌ No clients remaining. Stopping script.")
                 return
             check_interval = recalculate_interval(len(clients))
-            bot.send_message(ADMIN_USER_ID, f"Estimated delay {check_interval:.2f} seconds.")
+            # bot.send_message(ADMIN_USER_ID, f"Estimated delay {check_interval:.2f} seconds.")
             index = index % len(clients)
             continue
         except MaxRetriesExceededError:
