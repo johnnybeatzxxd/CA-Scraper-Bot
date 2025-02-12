@@ -16,7 +16,8 @@ app = Flask(__name__)
 # MongoDB Setup
 MONGO_URL = os.getenv('MONGO_URL')
 client = MongoClient(MONGO_URL)
-db = client['CA-Hunter']  
+db_name = os.getenv('DATABASE_NAME')
+db = client[db_name]  
 config_collection = db['configs']
 users = db["users"]
 
@@ -195,7 +196,6 @@ def chat(message):
                 bot.reply_to(message, f"Error: {str(e)}")
 
     elif message.text == "🛑 Stop hunting":
-        print("hellow world")
         if message.chat.id not in owners:
             user_doc = users.find_one({})
             allowed_users = user_doc.get('allowed_users', []) if user_doc else []

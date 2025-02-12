@@ -80,7 +80,8 @@ async def main(TARGET, CHECK_INTERVAL, user_id):
                         contract_addresses = get_contract_address(message.text)
                         if contract_addresses:
                             # only send the first contract address
-                            await client.send_message(bot_username, contract_addresses[0])
+                            # await client.send_message(bot_username, contract_addresses[0])
+                            bot.send_message(user_id,f"{contract_addresses[0]}")
                             logger.info(f"Contract address forwarded from {TARGET}: {contract_addresses[0]}")
                     
                     # Check if the message contains media (photo)
@@ -101,7 +102,8 @@ async def main(TARGET, CHECK_INTERVAL, user_id):
                                 contract_addresses = get_contract_address(text)
                                 if contract_addresses:
                                     for contract_address in contract_addresses:
-                                        await client.send_message(bot_username, contract_address)
+                                        # await client.send_message(bot_username, contract_address)
+                                        bot.send_message(user_id,f"{contract_address}")
                                         logger.info(f"Contract address forwarded from {TARGET}: {contract_address}")
                                 else:
                                     logger.info("No contract addresses found in the image.")
